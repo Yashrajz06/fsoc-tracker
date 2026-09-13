@@ -289,14 +289,85 @@ See §8.2.
 
 ## 7. Throughput
 
-Three clocks are logged separately and never conflated: frame generation (≥30 Hz), control
-(≥20 Hz), and end-to-end processing FPS, plus an unthrottled capacity benchmark reporting p95.
+### 7.1 Three clocks, never conflated
 
-ROI processing is what makes the requirement achievable. Full-frame vision on a 2000×2000 canvas
-costs 292 ms/frame — 2.9 FPS end to end, well outside the requirement — while decode alone is
-6.6 ms. Cropping the Tier-1 blur ladder to the ROI took it from 121 ms to 0.95 ms.
+Frame generation (≥30 Hz), control (≥20 Hz) and end-to-end processing FPS are separate clocks and
+are logged separately, alongside an unthrottled capacity benchmark reporting p95. Real-time
+processing FPS is capped by the frame-generation clock and therefore *understates* capability;
+the capacity figure is what substantiates the ≥20 FPS requirement with headroom.
 
----
+### 7.2 Every FPS number in this report, with its measurement condition
+
+Two very different throughput figures appear in this document, and the difference is entirely
+about **which processing path was active**. Stating one without its condition would read as a
+contradiction, so every figure below carries its condition — the same discipline applied to
+pooled versus association-excluded RMSE in §6.2.
+
+**Locked, ROI-limited** — the steady-state tracking path, and the configuration the ≥20 FPS
+requirement is about:
+
+| resolution | ROI side | mean | p95 | mean FPS | p95 FPS |
+|---|---|---|---|---|---|
+| 640×480 | 75 px | 3.39 ms | 3.74 ms | **294.7** | **267.7** |
+| 1920×1080 | 182 px | 8.63 ms | 8.32 ms | **115.9** | **120.2** |
+| 2000×2000 | 244 px | 13.53 ms | 11.87 ms | **73.9** | **84.3** |
+
+All three clear the requirement at p95 with more than an order of magnitude of margin.
+
+**Full-frame, unlocked** — the acquisition path, and what a clip that never achieves lock runs at
+for its whole duration:
+
+| resolution | mean FPS | p95 FPS |
+|---|---|---|
+| 640×480 | 16.8 | 18.8 |
+| 1920×1080 | 3.5 | 3.2 |
+| 2000×2000 | 1.8 | 1.7 |
+
+The Mode B figures quoted elsewhere in this report (3.4–18.8 FPS) are **full-frame, no-lock,
+no-ROI** measurements and belong to this second table. They are not a contradiction of the first
+table; they are the cost of the acquisition path on inputs where lock is never established.
+
+### 7.3 Why ROI processing is what makes the requirement achievable
+
+Vision cost measured directly on the same frames, full-frame against a 64 px ROI:
+
+| resolution | full-frame | ROI | speed-up |
+|---|---|---|---|
+| 640×480 | 47.6 ms | 1.51 ms | 31× |
+| 1920×1080 | 290.7 ms | 1.98 ms | 147× |
+| 2000×2000 | 614.1 ms | 1.52 ms | 404× |
+
+ROI cost is essentially flat at 1.5–2 ms regardless of frame size, which is the entire point: the
+window is sized by the *spot and the motion*, not by the sensor. Full-frame cost grows with pixel
+count and is what puts a 2000×2000 canvas at 1.6 FPS.
+
+Retention and centroiding RMSE are **unchanged to three significant figures** with ROI enabled at
+every resolution tested (76.2 / 99.2 / 99.2 % retention; RMSE 1.79 / 1.88 / 2.02 px), so the
+throughput gain costs nothing in accuracy on these cases.
+
+### 7.4 The ROI window is sized from physics, not from a constant
+
+`AppConfig.roi_size_px()` derives the side length as
+`2 × (max per-frame boresight motion + jitter bound) + 2 × FWHM`, clamped to the configured
+ceiling. Because `deg_per_pixel` shrinks as resolution rises, the same 5 °/s slew ceiling is
+26.7 px/frame at 640×480 and 111.1 px/frame at 2000×2000 — so the derived window is 75 px, 182 px
+and 244 px respectively. A fixed 64 px window is comfortable at the smallest and hopeless at the
+largest, which is precisely the failure the derivation removes.
+
+On a run of missed detections the window expands geometrically, capped at the ceiling. A stale
+prediction after a loss is wrong by a growing amount, and a window sized for the locked case
+cannot contain the target it is trying to recover.
+
+### 7.5 Caveat: one clip regresses under ROI
+
+On `fhd_1920_bigspot`, enabling ROI raises the association-failure rate from 10.8 % to 100 %. The
+mechanism is that an ROI makes an association error **self-reinforcing**: full-frame, the detector
+re-finds the true target after a wrong lock; once the window follows the wrong object, the true
+target is outside it and can never be re-found. Expansion-on-loss does not help, because the
+detector never *misses* — it confidently finds the wrong thing every frame.
+
+That clip's baseline association failure is itself under investigation (§15), and the ROI shipping
+decision is deliberately not closed until it resolves.
 
 ## 8. Honest limits
 
@@ -374,7 +445,88 @@ unobservable and belongs in `R` (retention 36% → 98%); SEARCH swept past a vis
 
 ---
 
-## 10. Verification
+## 10. Software modules
+
+| module | responsibility |
+|---|---|
+| `src/config.py` | Schema, validation, and every derived physical quantity: `deg_per_pixel`, `max_px_per_frame`, `resolve_geometry(fwhm)`, `kalman_params()`, `roi_size_px()`, the search-time envelope |
+| `src/framesource.py` | The `FrameSource` protocol — the single seam between Mode A and Mode B |
+| `src/sim/` | Canvas, beacon rendering (supersampled, area-sampled), seven trajectory models |
+| `src/camera/` | Pan/tilt model, viewport extraction, slew limiting |
+| `src/noise/` | Gaussian, Poisson, salt & pepper, atmospheric presets, jitter, platform motion, turbulence |
+| `src/vision/` | `preprocess` → `detect` → `centroid` → `snr`, plus the three-tier `spotscale` estimator |
+| `src/filtering/` | `kalman` (CV model, adaptive R, Joseph form, Mahalanobis gate) and `track` (initiation, confirmation, coasting, competing hypotheses) |
+| `src/control/` | `pid`, `controller`, `statemachine` (SEARCH/TRACK/COAST), `search` (spiral) |
+| `src/telemetry/` | Per-frame records, metric accumulation, CSV logging, HTML report, capacity benchmark |
+| `src/ai/` | Candidate discriminator: NumPy model and training, ONNX export, runtime validator |
+| `src/runner.py` | The shared headless run loop. Imports no Qt |
+| `src/gui/` | Qt dashboard: a view over `TrackingRunner`, containing no tracking logic |
+
+Every public function carries type hints and a docstring. The dependency direction is strictly
+one way: `gui` → `runner` → everything else, and `vision` never imports `ai` (so a missing
+`onnxruntime` cannot break the classical path).
+
+## 11. Test methodology
+
+663 tests, run as `pytest tests/ -m "not slow"`. The method rather than the count is the point.
+
+**Properties, not snapshots.** Noise generators are tested statistically — mean, variance, impulse
+density — rather than against stored images, so a change that alters the distribution fails even
+if it looks similar.
+
+**Cheap path against reference path.** The recurring technique that found most real defects: ROI
+output against full-frame output, frozen executable against source, an estimator against the
+closed-form law it claims to follow. Where the two disagree, one of them is wrong and the
+disagreement localises it.
+
+**Adversarial inputs by construction.** Mode B fixtures are generated with resolution, spot size,
+brightness, atmosphere and bitrate deliberately *unlike* our defaults. Testing on inputs shaped
+like our own simulator would prove only that we can track our own simulator.
+
+**Mutation testing for configuration.** Every evaluator-facing knob is verified by changing it and
+asserting the observable consequence. A reference count is not evidence: config binds JSON keys to
+dataclass fields by name, so a live knob's literal may never appear in the source, and a dead one
+can still be validated on load.
+
+**Numerical gradient checking** for the CNN, which caught max-pooling routing gradients to the
+wrong pixels — a defect that still trained, just worse.
+
+**Bit-reproducibility of fixtures**, so a benchmark figure can be reproduced run to run.
+
+Several tests exist specifically because the property they assert was violated in a way every
+other test passed. The clearest is `test_filter_consistency`: the fused estimate must not be worse
+than the raw measurement it smooths. At the old process-noise value it was 17× worse, and every
+existing filtering test still passed — because they all checked the filter against *itself*.
+
+## 12. Future improvements
+
+**Resolve the large-spot association failure.** The open item in §15. Association failure reaches
+39.8 % at a 15 px spot while the centroid, when it associates, stays at 0.06 px. The current
+leading hypothesis is a degenerate adaptive threshold admitting 0.47 % of pixels and fragmenting a
+clean frame into ~2 800 blobs, so the true beacon loses a flux-ranking lottery.
+
+**Periodic full-frame re-validation while locked.** This would break the self-reinforcing wrong
+lock described in §7.5 at a bounded, predictable throughput cost — the ROI path has two orders of
+magnitude of headroom to spend.
+
+**Retrain the discriminator with large spots better represented.** It fails its gate today by
+being *confidently* wrong on 20 px spots, which is consistent with under-representation in
+training rather than with the approach being unsound.
+
+**Apply the scale-asymmetry policy to the blob-area gate.** Underestimating spot scale is
+catastrophic and overestimating is merely lossy. That reasoning currently governs the top-hat
+kernel but not the upper area bound, which it covers just as directly.
+
+**Multiple simultaneous targets** (specification parameter 8, optional). The track-management
+layer already maintains competing hypotheses, which is most of the machinery a multi-target
+tracker needs.
+
+**Sub-pixel ROI placement and an IMM filter.** The constant-velocity model is deliberately simple;
+`DESIGN.md` §6 anticipates an interacting-multiple-model filter for genuinely manoeuvring targets.
+Measurement so far says the CV model is not the binding constraint, so this is listed as an
+option rather than a plan.
+
+## 13. Verification
 
 651 tests pass (`pytest tests/`, excluding slow-marked). Notable properties under test:
 
@@ -406,7 +558,7 @@ rather than left looking tunable. Three groups are retained but explicitly marke
 
 ---
 
-## 11. Packaging
+## 14. Packaging
 
 Two executables are built and maintained side by side (see `docs/PACKAGING.md`): a headless binary
 (~99 MB) and a GUI binary (~318 MB). They are kept separate deliberately — Qt plugin failures
@@ -420,7 +572,7 @@ failure was unambiguously a Qt problem rather than a base-packaging one.
 
 ---
 
-## 12. Open items
+## 15. Open items
 
 - The candidate discriminator (§5.5) is implemented, trained, tested and bundled, but ships
   **disabled by default**: it fails the shipping gate on `fhd_1920_bigspot`, where it raises
