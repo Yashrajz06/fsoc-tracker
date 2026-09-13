@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+# PyInstaller build artefacts are ignored, EXCEPT the project spec file: the standalone
+# executable is a mandatory graded deliverable and its spec is source, not output.
+# Do not remove the negation -- it is what keeps fsoc-tracker.spec in the repository.
+*.spec
+!fsoc-tracker.spec
+logs/
+*.mp4
+!scenarios/*.mp4
+docs/figures/*.png
+.DS_Store
+.idea/
+.vscode/
+
+# Generated training corpus for the AI discriminator. Regenerable and deterministic via
+# scripts/train_ai.py; the clips themselves are large and are never a build input.
+build/train_clips/
+
+# The exported discriminator IS committed (15 KB, and fsoc-tracker.spec bundles it), but any
+# intermediate checkpoints or retrained variants are not.
+models/*.npz
+models/*.ckpt
+!models/discriminator.onnx
