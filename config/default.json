@@ -1,0 +1,436 @@
+{
+  "_comment": "Default configuration. Every tunable value in the system lives here. Nothing tunable should be a literal in the source code. Spec references are the parameter numbers from docs/PROBLEM_STATEMENT.md.",
+  "run": {
+    "mode": "simulation",
+    "_mode_options": [
+      "simulation",
+      "video"
+    ],
+    "duration_seconds": 60.0,
+    "random_seed": 42,
+    "headless": false
+  },
+  "scene": {
+    "_spec_ref": "Parameter 1",
+    "width": 2000,
+    "height": 2000,
+    "background_level": 10,
+    "background_gradient": false
+  },
+  "camera": {
+    "_spec_ref": "Parameters 2-6, 13-15",
+    "resolution_width": 640,
+    "resolution_height": 480,
+    "fov_horizontal_deg": 4.0,
+    "fov_vertical_deg": 3.0,
+    "update_rate_hz": 30.0,
+    "initial_position": "center",
+    "_initial_position_options": [
+      "center",
+      "random",
+      "custom"
+    ],
+    "initial_pan_px": null,
+    "initial_tilt_px": null,
+    "max_pan_speed_deg_s": 5.0,
+    "max_tilt_speed_deg_s": 5.0,
+    "_speed_range": "5.0 to 10.0 per spec",
+    "max_acceleration_deg_s2": 20.0,
+    "_derived_note": "deg_per_pixel, max_px_per_frame and the worst-case search time are COMPUTED properties on CameraConfig in src/config.py. They are deliberately not stored here: a stored literal silently goes stale the moment fov or resolution changes."
+  },
+  "target": {
+    "_spec_ref": "Parameters 7-12",
+    "count": 1,
+    "shape": "gaussian",
+    "_shape_options": [
+      "gaussian",
+      "square",
+      "circle"
+    ],
+    "size_px": 10,
+    "_size_range": [
+      5,
+      20
+    ],
+    "gaussian_sigma_px": 2.5,
+    "peak_intensity": 255,
+    "supersample_factor": 4,
+    "initial_position": "random",
+    "_initial_position_options": [
+      "random",
+      "center",
+      "custom"
+    ],
+    "initial_x": null,
+    "initial_y": null,
+    "boundary_behaviour": "bounce",
+    "_boundary_options": [
+      "bounce",
+      "wrap",
+      "clamp"
+    ],
+    "motion": {
+      "type": "circular",
+      "_type_options_mandatory": [
+        "linear",
+        "circular",
+        "figure8",
+        "random"
+      ],
+      "_type_options_optional": [
+        "spiral",
+        "sinusoidal",
+        "ornstein_uhlenbeck",
+        "custom"
+      ],
+      "linear": {
+        "velocity_x_px_s": 120.0,
+        "velocity_y_px_s": 60.0
+      },
+      "circular": {
+        "center_x": 1000,
+        "center_y": 1000,
+        "radius_px": 400.0,
+        "angular_velocity_rad_s": 0.3
+      },
+      "figure8": {
+        "amplitude_x_px": 500.0,
+        "amplitude_y_px": 300.0,
+        "angular_velocity_rad_s": 0.25,
+        "phase_offset_rad": 0.0,
+        "_ratio": "a:b = 1:2 produces the figure-of-8"
+      },
+      "random": {
+        "step_sigma_px": 8.0,
+        "max_speed_px_s": 200.0
+      },
+      "spiral": {
+        "center_x": 1000,
+        "center_y": 1000,
+        "growth_rate_b": 12.0,
+        "angular_velocity_rad_s": 0.4
+      },
+      "sinusoidal": {
+        "velocity_x_px_s": 100.0,
+        "amplitude_px": 250.0,
+        "angular_velocity_rad_s": 0.5
+      },
+      "ornstein_uhlenbeck": {
+        "theta": 0.15,
+        "mu_x": 1000.0,
+        "mu_y": 1000.0,
+        "sigma": 40.0
+      }
+    }
+  },
+  "noise": {
+    "_spec_ref": "Parameters 21-25",
+    "enabled": true,
+    "pipeline_order": [
+      "turbulence",
+      "atmospheric",
+      "gaussian",
+      "poisson",
+      "salt_pepper"
+    ],
+    "gaussian": {
+      "enabled": true,
+      "sigma": 10.0,
+      "_max_per_spec": 20.0
+    },
+    "poisson": {
+      "enabled": false,
+      "scale": 1.0
+    },
+    "salt_pepper": {
+      "enabled": false,
+      "density": 0.05,
+      "_max_per_spec": 0.1,
+      "salt_ratio": 0.5
+    },
+    "atmospheric": {
+      "enabled": true,
+      "preset": "clear",
+      "_preset_options": [
+        "clear",
+        "haze",
+        "fog",
+        "rain",
+        "low_light"
+      ],
+      "presets": {
+        "clear": {
+          "beta": 0.0,
+          "airlight": 0,
+          "blur_sigma": 0.0,
+          "brightness_scale": 1.0
+        },
+        "haze": {
+          "beta": 0.35,
+          "airlight": 120,
+          "blur_sigma": 0.0,
+          "brightness_scale": 1.0
+        },
+        "fog": {
+          "beta": 0.75,
+          "airlight": 180,
+          "blur_sigma": 1.5,
+          "brightness_scale": 1.0
+        },
+        "rain": {
+          "beta": 0.45,
+          "airlight": 100,
+          "blur_sigma": 0.8,
+          "brightness_scale": 0.9,
+          "streaks": true
+        },
+        "low_light": {
+          "beta": 0.1,
+          "airlight": 10,
+          "blur_sigma": 0.0,
+          "brightness_scale": 0.25
+        }
+      }
+    },
+    "turbulence": {
+      "enabled": false,
+      "model": "lognormal",
+      "_model_options": [
+        "lognormal",
+        "gamma_gamma"
+      ],
+      "rytov_variance": 0.1,
+      "_gamma_gamma_reference": "alpha/beta are DERIVED at runtime from rytov_variance by the standard plane-wave relations in src/noise/turbulence.py; never hardcode them. Computed values: sigma_R^2=0.1 -> 21.59/19.82 (SI 0.099); =1 -> 4.39/2.56 (SI 0.706); =10 -> 5.69/1.10 (SI 1.243). Published tables differ because alpha/beta depend on wave model, aperture averaging, and whether the table is keyed by sigma_R or sigma_R^2 - compare the scintillation index instead, which is model-independent. See docs/DESIGN.md 4.3.",
+      "beam_wander": {
+        "enabled": false,
+        "theta": 0.2,
+        "sigma_px": 5.0
+      }
+    },
+    "camera_jitter": {
+      "enabled": true,
+      "max_px_per_frame": 5.0,
+      "_max_per_spec": 20.0,
+      "distribution": "gaussian"
+    },
+    "platform_motion": {
+      "enabled": false,
+      "type": "linear",
+      "_type_options": [
+        "linear",
+        "circular",
+        "random",
+        "spiral",
+        "figure8"
+      ],
+      "max_px_per_frame": 5.0,
+      "_max_per_spec": 20.0,
+      "velocity_x_px_s": 30.0,
+      "velocity_y_px_s": 15.0
+    }
+  },
+  "vision": {
+    "_comment": "NO fixed intensity thresholds permitted. All thresholding is adaptive. Furthermore NO fixed pixel GEOMETRY permitted on the primary path: kernel sizes, area gates, centroid window and ROI size all derive from the runtime spot-scale estimate below. The absolute *_fallback_px values are used ONLY when spot-scale estimation fails. See docs/ROADMAP.md Phase 0 and docs/DESIGN.md section 8.",
+    "spot_scale": {
+      "_comment": "Runtime estimate of the beacon spot scale, expressed as FWHM in pixels. This is the single length scale every other vision parameter is measured in. Estimating it per run is what lets the identical pipeline work on a 640x480 frame with a 10 px spot and on an unseen 1920x1080 evaluator video with a 40 px spot.",
+      "estimation_enabled": true,
+      "method": "residual_second_moment",
+      "_method_options": [
+        "residual_second_moment",
+        "blob_equivalent_diameter",
+        "fixed"
+      ],
+      "fallback_fwhm_px": 5.89,
+      "_fallback_note": "2.355 * target.gaussian_sigma_px (2.5) = 5.89 for our default beacon. Fallback only.",
+      "min_fwhm_px": 1.5,
+      "max_fwhm_px": 60.0,
+      "_bounds_note": "Clamps a runaway estimate. Below ~1.5 px the spot is undersampled; above 60 px it is not a beacon.",
+      "smoothing_alpha": 0.2,
+      "_smoothing_note": "EMA across frames. True spot scale changes slowly, per-frame estimates are noisy."
+    },
+    "preprocess": {
+      "median_filter_enabled": true,
+      "median_kernel_size": 3,
+      "_median_note": "3x3 is scale-independent by design: it targets single-pixel impulses, not the spot.",
+      "tophat_enabled": true,
+      "tophat_kernel_fwhm_multiple": 2.5,
+      "_tophat_note": "Structuring element must be larger than the spot so the spot survives the opening. 2.5 x FWHM = 14.7 px at default scale, matching the previous hardcoded 15.",
+      "tophat_kernel_fallback_px": 15,
+      "tophat_kernel_min_px": 3,
+      "tophat_kernel_max_px": 101,
+      "normalise_per_frame": true
+    },
+    "detection": {
+      "threshold_method": "mean_plus_k_sigma",
+      "_threshold_method_options": [
+        "mean_plus_k_sigma",
+        "otsu",
+        "adaptive_gaussian",
+        "percentile"
+      ],
+      "_threshold_note": "Default applies mean + k*sigma to the TOP-HAT RESIDUAL, not the raw frame. Rationale is fill factor in the raw histogram: a 10x10 spot is ~0.03% of a 640x480 frame, so the raw histogram is unimodal and Otsu has no second mode to find. Otsu on the residual is much better behaved and stays selectable as a report comparison row. See docs/DESIGN.md 5.1.1.",
+      "k_sigma": 3.0,
+      "percentile": 99.5,
+      "min_blob_area_spot_multiple": 0.15,
+      "max_blob_area_spot_multiple": 33.0,
+      "_area_note": "Multiples of the nominal spot area (pi/4)*FWHM^2 = 27.2 px^2 at default scale. 0.15 and 33.0 reproduce the previous absolute gates of 4 and 900 px^2 exactly at default scale. The upper gate is deliberately permissive pre-lock; Phase 3 should tighten it with SNR-sweep evidence rather than by guess.",
+      "min_blob_area_fallback_px": 4,
+      "max_blob_area_fallback_px": 900,
+      "min_circularity": 0.3,
+      "_circularity_note": "Dimensionless, so it is already scale-free and needs no multiple."
+    },
+    "centroid": {
+      "method": "iwcog",
+      "_method_options": [
+        "cog",
+        "thresholded_cog",
+        "iwcog",
+        "gaussian_fit"
+      ],
+      "iterations": 3,
+      "window_fwhm_multiple": 3.5,
+      "_window_note": "3.5 x FWHM = 20.6 -> 21 px at default scale, matching the previous hardcoded 21. Forced odd so the window has a defined centre pixel.",
+      "window_fallback_px": 21,
+      "window_min_px": 5,
+      "window_max_px": 201,
+      "background_k_sigma": 3.0
+    },
+    "roi": {
+      "enabled": true,
+      "size_fwhm_multiple": 11.0,
+      "_size_note": "11 x FWHM = 64.8 -> 64 px at default scale, matching the previous hardcoded 64. Must comfortably exceed the per-frame target motion plus jitter, or the target walks out of the ROI between frames.",
+      "size_fallback_px": 64,
+      "_comment": "Once locked, process only this window around the Kalman prediction. Critical for FPS.",
+      "expand_on_loss_factor": 2.0,
+      "max_size_fwhm_multiple": 44.0,
+      "max_size_fallback_px": 256,
+      "_expand_on_loss_factor_comment": "Window growth per consecutive missed detection, capped at max_size_*. Re-acquisition needs this: after a loss the prediction is stale and a window sized for the locked case cannot contain the target it is recovering.",
+      "_size_comment": "size_fwhm_multiple/size_fallback_px set the SCALE-derived floor. The window actually used is the slew-aware size from AppConfig.roi_size_px(): 2*(max per-frame boresight motion + jitter) + 2*FWHM, clamped to max_size_*. A fixed 64 px is comfortable at 640x480 (27 px/frame slew) and hopeless at 2000x2000 (111 px/frame)."
+    }
+  },
+  "filtering": {
+    "kalman": {
+      "enabled": true,
+      "model": "constant_velocity",
+      "_model_options": [
+        "constant_velocity",
+        "constant_acceleration",
+        "imm"
+      ],
+      "_process_noise_psd_comment": "Continuous white-noise acceleration PSD q, in px^2/s^3. Set to the SQUARE of the acceleration the constant-velocity model must absorb: the default circular trajectory (r=400 px, omega=0.3 rad/s) manoeuvres at omega^2*r = 36 px/s^2, so q ~ 36^2 ~ 1300. The previous value of 50 implied ~7 px/s^2 and was too small to cover the manoeuvre: during detection dropouts the prediction diverged along the curve, returning detections then fell outside the Mahalanobis gate, and the filter coasted further. Measured on the in-FOV Mode A scenario that cost 22/240 wrongly gated measurements and a fused RMSE of 0.95 px against a raw measurement RMSE of 0.056 px -- the filter was 17x worse than its own input. Response is flat from 2e2 to 1e7 (fused 0.053-0.055 px), so this is not a knife-edge tuning; above ~1e5 the filter stops smoothing and merely passes the measurement through.",
+      "process_noise_psd": 1300.0,
+      "initial_position_uncertainty_px": 50.0,
+      "initial_velocity_uncertainty_px_s": 200.0
+    },
+    "gating": {
+      "enabled": true,
+      "mahalanobis_threshold": 9.21,
+      "_comment": "9.21 = chi-squared 99% for 2 DOF"
+    },
+    "track_management": {
+      "confirm_m_of_n": [
+        3,
+        5
+      ],
+      "delete_after_missed": 5
+    }
+  },
+  "control": {
+    "update_rate_hz": 30.0,
+    "_min_per_spec": 20.0,
+    "pid": {
+      "_VALIDATED": "Gains confirmed by the Phase 4 step-response and disturbance-rejection tests, run WITH the real Kalman filter in the loop (tests/test_control.py). The earlier PROVISIONAL marker is lifted.",
+      "_kp_derivation": "Analytic sizing gives Kp=8 (100 px = 0.625 deg; 5.0 deg/s / 0.625 deg = 8.0). Measured WITH the filter in the loop, Kp=8 settles a 100 px step in 1.07 s against 0.30 s for an idealised perfect measurement - the filter's lag is inside the loop, so the analytic value was optimistic. Kp=12 restores 0.40 s settling.",
+      "kp": 12.0,
+      "_ki_derivation": "Sized by platform-motion rejection, which is what the integral exists for. At 150 px/s platform drift: ki=0 gives 19.5 px steady-state error (outside the 10 px budget), ki=0.5 gives 9.2 px, ki=1.0 gives 4.3 px.",
+      "ki": 1.0,
+      "_kd_derivation": "Measured as zero. With Kalman-velocity feedforward already cancelling target motion, the derivative term contributes no useful damping and amplifies estimator noise: kd=1.5 costs 2.58 px static error against 0.75 px at kd=0, and settles 0.87 s against 0.40 s. Note an earlier version fed the target velocity to the derivative rather than the error rate, double-counting the feedforward; that bug is fixed, and kd=0 remains the measured optimum afterwards.",
+      "kd": 0.0,
+      "integral_limit": 5.0,
+      "_integral_limit_units": "deg*s, anti-windup clamp on the accumulated term"
+    },
+    "feedforward": {
+      "enabled": true,
+      "gain": 1.0,
+      "_comment": "Uses Kalman velocity estimate to cancel steady-state phase lag"
+    },
+    "state_machine": {
+      "lock_confirm_frames": 3,
+      "loss_declare_frames": 5,
+      "coast_timeout_seconds": 1.0,
+      "lock_window_px": 40,
+      "unlock_window_px": 80,
+      "_comment": "Different enter/exit windows provide hysteresis against mode chatter"
+    },
+    "search": {
+      "pattern": "archimedean_spiral",
+      "_pattern_options": [
+        "archimedean_spiral",
+        "raster"
+      ],
+      "arm_spacing_fov_fraction": 0.9,
+      "_arm_spacing_note": "Arm spacing is FOV-DERIVED, not stored: spacing = fraction * min(fov_width_px, fov_height_px) = 0.9 * 480 = 432 px at default resolution. Using the LIMITING FOV dimension guarantees no coverage gaps; the fraction supplies overlap margin. The previous hardcoded 300 px both wasted scan time and silently opened coverage holes whenever FOV or resolution changed. Computed by ControlConfig.search_arm_spacing_px in src/config.py.",
+      "scan_speed_deg_s": 5.0,
+      "_not_implemented": "'pattern' and 'scan_speed_deg_s' are NOT consumed. The spiral search derives its arm spacing from arm_spacing_fov_fraction and its speed from camera.max_pan_speed_deg_s. Kept because an alternative search pattern is a plausible extension; they are inert today."
+    }
+  },
+  "telemetry": {
+    "enabled": true,
+    "output_dir": "logs",
+    "per_frame_csv": true,
+    "per_frame_json": false,
+    "summary_report": true,
+    "_summary_format_options": [
+      "html",
+      "pdf",
+      "both"
+    ],
+    "_comment": "Metric definitions must appear in every log header to remove evaluator ambiguity",
+    "_split_note": "Acquisition time is reported as TWO populations, never pooled: in-FOV (beacon inside the initial viewport, detection-limited) and search-limited (beacon outside it, bounded below by the slew ceiling). Pooling them hides a physical limit behind an initial-condition lottery and makes the headline number unreproducible under target.initial_position=random. See docs/DESIGN.md 7.5.",
+    "capacity_benchmark": {
+      "enabled": true,
+      "_comment": "Unthrottled pipeline-capacity mode, reported SEPARATELY from the real-time rate. In a normal run the 30 Hz producer caps logged FPS at 30, so throughput could silently degrade from 200 Hz to 31 Hz with every log still reading 30 FPS. Capacity is what substantiates the >=20 FPS claim with headroom. See docs/DESIGN.md 9.1.",
+      "frames": 500,
+      "warmup_frames": 50,
+      "_warmup_note": "Discard warmup frames so Numba JIT compilation is not counted against throughput."
+    },
+    "metrics": {
+      "acquisition_target_s": 2.0,
+      "reacquisition_target_s": 1.0,
+      "tracking_error_target_px": 10.0,
+      "loss_rate_target": 0.05,
+      "fps_target": 20.0
+    }
+  },
+  "video_input": {
+    "_comment": "Mode B. Bypasses the PTZ camera; the video IS the scene.",
+    "path": null,
+    "force_grayscale": true,
+    "normalise_intensity": true,
+    "ground_truth_path": null,
+    "_ground_truth_comment": "Optional sidecar CSV of true centroids if evaluators provide one"
+  },
+  "gui": {
+    "enabled": true,
+    "display_rate_hz": 30.0,
+    "plot_history_seconds": 30.0
+  },
+  "performance": {
+    "_not_implemented": "No performance knob is consumed. Numba is selected by the build (scripts/build.sh --with-numba), not by configuration; there is no threading or profiling layer. Section kept as a placeholder only."
+  },
+  "ai": {
+    "_comment": "Optional lightweight CNN fallback for re-acquisition/validation. Classical CV remains the primary path.",
+    "enabled": false,
+    "model_path": null,
+    "backend": "onnxruntime",
+    "invoke_on": "classical_failure",
+    "_invoke_on_options": [
+      "never",
+      "classical_failure",
+      "always"
+    ],
+    "confidence_threshold": 0.5,
+    "max_inference_ms": 20.0,
+    "_not_implemented": "Only 'enabled' is consumed, and it is false. model_path, backend, invoke_on, confidence_threshold and max_inference_ms are inert until the ONNX validator lands. Editing them today has no effect."
+  }
+}
