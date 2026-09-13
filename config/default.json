@@ -41,7 +41,7 @@
   "target": {
     "_spec_ref": "Parameters 7-12",
     "count": 1,
-    "shape": "gaussian",
+    "shape": "square",
     "_shape_options": [
       "gaussian",
       "square",
@@ -121,7 +121,8 @@
         "mu_y": 1000.0,
         "sigma": 40.0
       }
-    }
+    },
+    "_shape_comment": "Spec parameter 9: 'User-defined, Default: Square'. Square is the default because the specification says so, not because it is the most physically faithful beacon -- a real optical beacon is closer to the gaussian option. All three shapes are implemented and characterised; see the shape-split centroid-error-vs-SNR curve in the technical report."
   },
   "noise": {
     "_spec_ref": "Parameters 21-25",

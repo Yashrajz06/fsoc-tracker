@@ -251,15 +251,32 @@ def test_resolved_geometry_reproduces_previous_absolutes_at_default_scale(config
     calibrated for it must land on the same numbers, so any behaviour change observed later is
     attributable to the estimator rather than to a silent shift in defaults.
     """
-    fwhm = config.target.nominal_fwhm_px
-    assert fwhm == pytest.approx(5.89, abs=0.01)
+    # The calibration scale is stated explicitly rather than read from the current default
+    # shape. The multiples were calibrated against a gaussian spot of sigma 2.5 (FWHM 5.89), and
+    # that is what this anchor pins. Reading config.target.nominal_fwhm_px instead silently
+    # coupled the anchor to the default shape, so changing the default from gaussian to square
+    # (spec parameter 9 says "Default: Square") broke a test that has nothing to do with which
+    # shape ships as the default.
+    calibration_fwhm = 5.89
 
-    geometry = config.vision.resolve_geometry(fwhm)
+    geometry = config.vision.resolve_geometry(calibration_fwhm)
     assert geometry.tophat_kernel_px == 15
     assert geometry.centroid_window_px == 21
     assert geometry.roi_size_px == 65  # 11 * 5.89, versus the previous fixed 64
     assert geometry.min_blob_area_px == pytest.approx(4.0, abs=0.5)
     assert geometry.max_blob_area_px == pytest.approx(900.0, abs=20.0)
+
+
+def test_default_target_shape_matches_the_specification(config: AppConfig) -> None:
+    """Spec parameter 9: "Target Shape: User-defined, Default: Square".
+
+    Square is the shipped default because the specification says so. A 10 px square has a
+    half-max width of its full 10 px, against 5.89 px for the gaussian of sigma 2.5 -- so the
+    default spot scale differs between them, and the scale-relative geometry follows it. All
+    three shapes are implemented and characterised.
+    """
+    assert config.target.shape == "square"
+    assert config.target.nominal_fwhm_px == pytest.approx(10.0, abs=0.01)
 
 
 def test_resolved_geometry_scales_with_spot_size(config: AppConfig) -> None:
