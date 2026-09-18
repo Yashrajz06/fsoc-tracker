@@ -1,5 +1,9 @@
 # Handoff — large-spot association failure
 
+> **PHASE A UPDATE (see "Phase A findings" at the foot of this file): the threshold hypothesis in
+> §2 is FALSIFIED. The mechanism is gate lockout with a near-perfect detector, not detection.
+> §2 and §3 are retained as written for the record; read the Phase A section for what is true.**
+
 Written mid-investigation, at low context, immediately after retracting a wrong conclusion. The
 retraction is first because the next session's most likely failure mode is re-deriving it.
 
@@ -144,3 +148,76 @@ loss and the window, capped at `max_size_*`, still cannot reach the target.
 - **The AI discriminator ships disabled** (`ai.enabled: false`), failing its gate on the same
   clip. Same caveat: may be downstream of §2.
 - **Suite green at 662 passed**, 8 deselected (slow).
+
+
+---
+
+# Phase A findings — the threshold hypothesis is falsified
+
+## The §3 question is answered: the guard's trigger never fires
+
+`_separating_threshold()` returns the computed level unchanged unless `level <= median_level`.
+Observed on the shipped path over 25 consecutive frames: `level > median_level` on **25/25**
+calls, and the guard fired on **0/25**. The level sat at **4.07 % of the way from median to
+peak** — nominally above background, nowhere near separating. The guard only catches *total*
+collapse, so a weak-but-positive threshold passes it untouched.
+
+That is the answer to §3. It is **not** "fires with a near-zero midpoint".
+
+## But the threshold is not the cause
+
+Re-measured with current code (ROI wired, q=1300, square default). Association failure, ROI off
+versus ROI on, with median candidates per frame:
+
+| clip | ROI off | ROI on | candidates (ROI off) |
+|---|---|---|---|
+| sz5  | 0.0 % | 0.0 % | 2478 |
+| sz10 | 0.0 % | 0.0 % | 1517 |
+| sz15 | 39.8 % | 99.2 % | 2691 |
+| sz20 | 13.6 % | 99.1 % | 1106 |
+
+ROI off reproduces the original 39.8 / 13.6 figures exactly. **sz5 has more candidates (2478)
+than sz20 (1106) and zero failures**, so candidate count cannot be the mechanism — which
+falsifies the causal chain in §2.
+
+## The real mechanism: gate lockout on a near-perfect detector
+
+On the failing frames (ROI off), where the fused error exceeds 40 px:
+
+| clip | detection error (median) | estimate_source | gated_out |
+|---|---|---|---|
+| sz15 | **0.068 px** | 100 % `predicted` | **47/47** |
+| sz20 | **0.068 px** | 94 % `predicted` | **15/16** |
+
+The detector is essentially perfect and **every correct measurement is rejected by the
+Mahalanobis gate**, after which the filter coasts away on prediction. Confirmed independently at
+the blob level: on failing frames the beacon is a pre-gate blob in 47/47 cases, passes the area
+gate in 47/47, and is the flux winner — winner and beacon are the same blob to 1.00x on area,
+flux and peak.
+
+With ROI enabled the detection error on failing frames becomes 604–1007 px, because the window
+follows the diverged track. That is the self-reinforcement already described in report §7.5, and
+it is an amplifier, not the cause.
+
+## A concrete defect found along the way
+
+`sigma_meas_px` is **1.6668 px on every clip**, identical across spot sizes 5–20 px and aperture
+SNR 685–5242. Adaptive R is not adapting at all in Mode B. The cause: the runner sets
+`unobservable_sigma_px` from `noise.camera_jitter.max_px_per_frame / 3` = 1.6667, and **Mode B
+inherits it even though Mode B has no camera and applies no jitter** — the video is the scene.
+So R is pinned at 1.67 px while the detector delivers 0.068 px.
+
+This must be fixed on its own merits. Whether it is the whole of the lockout is **not yet
+established** — inflating R makes the gate more permissive, so it does not by itself explain
+rejection, and NIS is nonetheless enormous (median 193.8 at sz15 against a 9.21 gate), implying
+the track had already diverged by hundreds of pixels.
+
+## Where to go next
+
+The fix is in **filtering**, not in the threshold. The Phase A constraint about preserving
+`normalise_per_frame` therefore does not bind — no threshold change is proposed.
+
+Open question: why the track diverges far enough to produce NIS in the hundreds while the
+detector is reporting 0.068 px, and why `track.py`'s lockout and competing-hypothesis machinery
+— written for exactly this failure — does not recover. `contest_opened` appears only 3 times in
+47 failing frames, and where a contest ran the **incumbent held**.
