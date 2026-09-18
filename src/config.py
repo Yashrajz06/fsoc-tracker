@@ -1577,7 +1577,8 @@ class AppConfig:
                 stacklevel=2,
             )
 
-    def roi_size_unclamped_px(self, fwhm_px: Optional[float] = None) -> float:
+    def roi_size_unclamped_px(self, fwhm_px: Optional[float] = None,
+                              steerable: bool = True) -> float:
         """The ROI side length the physics demands, before clamping.
 
         Sized from the largest displacement the target can have relative to the ROI centre
@@ -1599,22 +1600,31 @@ class AppConfig:
 
         Args:
             fwhm_px: Spot scale. ``None`` uses the configured fallback.
+            steerable: Whether the frame source actually has a pan/tilt camera. Take it from
+                ``FrameSource.supports_pan_tilt``, never from a mode string. With pre-recorded
+                video there is no boresight to slew and no camera jitter to absorb, so budgeting
+                for either sizes the window from hardware the run does not have.
 
         Returns:
             The required side length in pixels, unclamped.
         """
         geometry = self.vision.resolve_geometry(fwhm_px)
+        if not steerable:
+            return 2.0 * geometry.fwhm_px
         jitter_px = float(self.noise.camera_jitter.get("max_px_per_frame", 0.0)) \
             if self.noise.camera_jitter.get("enabled") else 0.0
         pan_px, tilt_px = self.camera.max_px_per_frame
         half = max(pan_px, tilt_px) + jitter_px
         return 2.0 * half + 2.0 * geometry.fwhm_px
 
-    def roi_size_px(self, fwhm_px: Optional[float] = None) -> Tuple[int, bool]:
+    def roi_size_px(self, fwhm_px: Optional[float] = None,
+                    steerable: bool = True) -> Tuple[int, bool]:
         """The ROI side length to actually use, clamped to the configured ceiling.
 
         Args:
             fwhm_px: Spot scale. ``None`` uses the configured fallback.
+            steerable: Whether the source has a pan/tilt camera. See
+                :meth:`roi_size_unclamped_px`.
 
         Returns:
             ``(size_px, clamped)``. ``clamped`` is true when the physics wanted a larger window
@@ -1622,7 +1632,7 @@ class AppConfig:
             rather than a tuning preference -- hence the startup warning.
         """
         geometry = self.vision.resolve_geometry(fwhm_px)
-        required = self.roi_size_unclamped_px(fwhm_px)
+        required = self.roi_size_unclamped_px(fwhm_px, steerable=steerable)
         ceiling = float(geometry.max_roi_size_px)
         # Never smaller than the scale-derived window: at low slew rates the spot itself, not the
         # motion, sets the useful size.

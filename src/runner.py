@@ -122,9 +122,17 @@ class TrackingRunner:
         self.scale_tracker = ScaleTracker(
             fallback_fwhm_px=config.vision.spot_scale.fallback_fwhm_px)
 
+        # Camera jitter is unobservable by the estimator, so it belongs in R -- but only when a
+        # camera exists to jitter. With pre-recorded video the frame IS the scene: there is no
+        # boresight, nothing is shaken, and inheriting the configured jitter pins sigma_meas at
+        # 1.67 px while the detector is delivering 0.068 px, a 25x over-statement of measurement
+        # error that no amount of SNR can then correct.
+        #
+        # Keyed on the source's own capability, never on a mode string -- the same rule the lock
+        # criterion follows, and for the same reason.
         jitter = config.noise.camera_jitter
         jitter_sigma = (JitterParams.from_mapping(jitter).sigma_px
-                        if jitter.get("enabled") else 0.0)
+                        if (steerable and jitter.get("enabled")) else 0.0)
         self.track = Track(
             TrackParams(
                 confirm_m_of_n=tuple(
@@ -157,12 +165,15 @@ class TrackingRunner:
                 params=SearchParams(arm_spacing_fov_fraction=float(
                     config.control.search.get("arm_spacing_fov_fraction", 0.9))))
 
+        # Nominal step, used for the first frame and whenever a source supplies no usable
+        # timestamp delta. The *live* step comes from the frame timestamps -- see step().
         self.dt = 1.0 / config.camera.update_rate_hz
+        self._previous_timestamp: Optional[float] = None
         # Slew-aware ROI, sized from the physics once at construction rather than per frame: it
         # depends on the slew ceiling, the jitter bound and the spot scale, none of which change
         # within a run. See AppConfig.roi_size_unclamped_px.
         self.roi_enabled = bool(config.vision.roi.enabled)
-        self.roi_size_px, _clamped = config.roi_size_px()
+        self.roi_size_px, _clamped = config.roi_size_px(steerable=steerable)
         self.max_roi_size_px = int(config.vision.resolve_geometry(None).max_roi_size_px)
         self.roi_expand_factor = float(config.vision.roi.expand_on_loss_factor)
         self._missed_streak = 0
@@ -272,8 +283,20 @@ class TrackingRunner:
             detection = ((measurement.x + origin[0], measurement.y + origin[1])
                          if origin is not None else measurement.position)
 
+        # The filter must advance by the interval the frames actually arrived at, not by the
+        # configured camera rate. A pre-recorded clip carries its own frame rate, and
+        # VideoFrameSource already timestamps from it; taking dt from config instead would
+        # advance a constant-velocity model at the wrong rate on any evaluator video that is not
+        # exactly 30 fps, so the prediction would fall behind by a fixed fraction every frame.
+        dt = self.dt
+        if self._previous_timestamp is not None:
+            measured = frame_data.timestamp - self._previous_timestamp
+            if measured > 0:
+                dt = measured
+        self._previous_timestamp = frame_data.timestamp
+
         update = self.track.update(
-            detection, self.dt, frame_data.timestamp,
+            detection, dt, frame_data.timestamp,
             snr_aperture=measurement.snr.snr_aperture if measurement.snr else None,
             fwhm_px=measurement.geometry.fwhm_px if measurement.geometry else 5.887,
             clipped=measurement.clipped, saturated=measurement.saturated)
@@ -292,7 +315,7 @@ class TrackingRunner:
                            if origin is not None else update.position)
 
         machine = self.state_machine.update(update.accepted, pointing_error,
-                                            frame_data.timestamp, self.dt)
+                                            frame_data.timestamp, dt)
 
         slew_saturated = False
         if self.controller is not None:
@@ -301,10 +324,10 @@ class TrackingRunner:
             if not update.has_estimate:
                 if self.search is not None:
                     slew_saturated = self.controller.drive_to(
-                        self.search.step(self.dt), self.dt).saturated
+                        self.search.step(dt), dt).saturated
             else:
                 slew_saturated = self.controller.step(
-                    update.position, self.dt, update.velocity).saturated
+                    update.position, dt, update.velocity).saturated
                 if self.search is not None:
                     self.search.recenter(update.position)
 
