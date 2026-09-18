@@ -112,6 +112,8 @@ class MainWindow(QMainWindow):
             return
 
         self.charts.clear()
+        # The mini-map needs the scene size to show how narrow a slice the camera sees.
+        self.viewport.set_scene_size(config.scene.width, config.scene.height)
         self.thread = RunnerThread(config, display_rate_hz=config.gui.display_rate_hz)
         self.thread.frame_ready.connect(self._on_frame)
         self.thread.finished_run.connect(self._on_finished)

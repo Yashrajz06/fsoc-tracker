@@ -72,6 +72,12 @@ class FrameOutcome:
         measurement: Vision output for the frame.
         record: The telemetry record that was logged.
         estimate_xy: Fused track estimate in frame coordinates, when available.
+        roi: Processing window as ``(x, y, w, h)`` in frame coordinates, or ``None`` when the
+            frame was processed full-frame. Reported so the GUI can show *where* the pipeline
+            actually looked, which is otherwise invisible and is the single least obvious thing
+            about how the tracker achieves its throughput.
+        origin: Viewport top-left in world coordinates, or ``None`` for a source with no
+            steerable camera. Lets the GUI draw where the camera is looking within the scene.
         state: Tracking state machine mode after this frame.
         processing_ms: Wall-clock vision-plus-control time for the frame.
     """
@@ -80,6 +86,8 @@ class FrameOutcome:
     measurement: Measurement
     record: FrameRecord
     estimate_xy: Optional[Tuple[float, float]]
+    roi: Optional[Tuple[int, int, int, int]]
+    origin: Optional[Tuple[int, int]]
     state: TrackState
     processing_ms: float
 
@@ -346,7 +354,8 @@ class TrackingRunner:
         self.frames += 1
 
         return FrameOutcome(frame_data=frame_data, measurement=measurement, record=record,
-                            estimate_xy=estimate_xy, state=machine.state,
+                            estimate_xy=estimate_xy, roi=roi, origin=origin,
+                            state=machine.state,
                             processing_ms=processing_ms)
 
     def run(self, on_frame: Optional[Callable[[FrameOutcome], None]] = None,
