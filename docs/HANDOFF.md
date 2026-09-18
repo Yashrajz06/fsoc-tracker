@@ -152,72 +152,127 @@ loss and the window, capped at `max_size_*`, still cannot reach the target.
 
 ---
 
-# Phase A findings — the threshold hypothesis is falsified
+# Phase A findings — root cause located
 
-## The §3 question is answered: the guard's trigger never fires
+Phase A is **diagnostically complete**. The threshold hypothesis is dead, the root cause is
+identified with a frame trace, and three unrelated leaks were found and fixed on the way. The
+two fixes the root cause implies are **proposed, not implemented** — see §P5.
 
-`_separating_threshold()` returns the computed level unchanged unless `level <= median_level`.
-Observed on the shipped path over 25 consecutive frames: `level > median_level` on **25/25**
-calls, and the guard fired on **0/25**. The level sat at **4.07 % of the way from median to
-peak** — nominally above background, nowhere near separating. The guard only catches *total*
-collapse, so a weak-but-positive threshold passes it untouched.
+---
 
-That is the answer to §3. It is **not** "fires with a near-zero midpoint".
+## P1. The threshold hypothesis is falsified
 
-## But the threshold is not the cause
+Re-measured with current code (ROI wired, q=1300, square default). Association failure with
+median candidates per frame:
 
-Re-measured with current code (ROI wired, q=1300, square default). Association failure, ROI off
-versus ROI on, with median candidates per frame:
-
-| clip | ROI off | ROI on | candidates (ROI off) |
+| clip | ROI off | ROI on | candidates/frame (ROI off) |
 |---|---|---|---|
 | sz5  | 0.0 % | 0.0 % | 2478 |
 | sz10 | 0.0 % | 0.0 % | 1517 |
 | sz15 | 39.8 % | 99.2 % | 2691 |
 | sz20 | 13.6 % | 99.1 % | 1106 |
 
-ROI off reproduces the original 39.8 / 13.6 figures exactly. **sz5 has more candidates (2478)
-than sz20 (1106) and zero failures**, so candidate count cannot be the mechanism — which
-falsifies the causal chain in §2.
+**sz5 carries 2478 candidates per frame with zero failures; sz20 carries 1106 with 13.6 %.**
+Candidate count is therefore not the mechanism, and the "degenerate threshold → thousands of
+blobs → flux lottery" chain in §2 is dead.
 
-## The real mechanism: gate lockout on a near-perfect detector
+`normalise_per_frame` was never touched and the Phase A constraint on preserving it never bound,
+because no threshold change was proposed or made.
 
-On the failing frames (ROI off), where the fused error exceeds 40 px:
+## P2. The §3 question, answered: the guard's trigger never fires
 
-| clip | detection error (median) | estimate_source | gated_out |
-|---|---|---|---|
-| sz15 | **0.068 px** | 100 % `predicted` | **47/47** |
-| sz20 | **0.068 px** | 94 % `predicted` | **15/16** |
+`_separating_threshold()` returns the computed level unchanged unless `level <= median_level`.
+Observed on the shipped path across 25 consecutive frames:
 
-The detector is essentially perfect and **every correct measurement is rejected by the
-Mahalanobis gate**, after which the filter coasts away on prediction. Confirmed independently at
-the blob level: on failing frames the beacon is a pre-gate blob in 47/47 cases, passes the area
-gate in 47/47, and is the flux winner — winner and beacon are the same blob to 1.00x on area,
-flux and peak.
+* `level > median_level` on **25/25** calls
+* guard fired on **0/25**
+* the level sat at **4.07 % of the way from median to peak**
 
-With ROI enabled the detection error on failing frames becomes 604–1007 px, because the window
-follows the diverged track. That is the self-reinforcement already described in report §7.5, and
-it is an amplifier, not the cause.
+It catches *total* collapse only. A threshold that is nominally above background yet admits
+almost everything passes it untouched. **This is a real weakness and worth fixing on its own
+merits** — it is simply not the cause of this bug.
 
-## A concrete defect found along the way
+## P3. Root cause: one spurious first detection, unbounded initiation velocity
 
-`sigma_meas_px` is **1.6668 px on every clip**, identical across spot sizes 5–20 px and aperture
-SNR 685–5242. Adaptive R is not adapting at all in Mode B. The cause: the runner sets
-`unobservable_sigma_px` from `noise.camera_jitter.max_px_per_frame / 3` = 1.6667, and **Mode B
-inherits it even though Mode B has no camera and applies no jitter** — the video is the scene.
-So R is pinned at 1.67 px while the detector delivers 0.068 px.
+`sz15`, ROI off, from run start. `detErr` is the detector against truth; `fusedErr` is the track.
 
-This must be fixed on its own merits. Whether it is the whole of the lockout is **not yet
-established** — inflating R makes the gate more permissive, so it does not by itself explain
-rejection, and NIS is nonetheless enormous (median 193.8 at sz15 against a 9.21 gate), implying
-the track had already diverged by hundreds of pixels.
+```
+  f   detErr  fusedErr     source         reason      NIS   |v|est
+  0  499.907        -               initiating          -        -
+  1    0.146        -               initiating          -        -
+  2    0.162     0.16   measured      confirmed          -   7550.6
+  3    0.166   250.18  predicted      gated_out      24.63   7550.6
+  4    0.061   500.21  predicted      gated_out      93.41   7550.6
+  5    0.237   750.24  predicted      gated_out     193.94   7550.6
+  ...
+ 18    0.049  4000.64  predicted  contest_incumbent_held  1147.83  7550.6
+  ...
+ 31    0.178  7251.05  predicted      gated_out    1305.59   7550.6
+```
 
-## Where to go next
+The **first detection is 499.9 px wrong**. `Track._initiate` derives velocity from that spurious
+point and frame 1's correct one, yielding **7550.6 px/s against a true target speed of
+71.1 px/s** — 106x too fast. The track then flies in a straight line at exactly 251.7 px/frame
+and never returns. Every subsequent detection is correct to ~0.06 px and every one is gated out.
 
-The fix is in **filtering**, not in the threshold. The Phase A constraint about preserving
-`normalise_per_frame` therefore does not bind — no threshold change is proposed.
+The gate rejections, the NIS explosion, the ROI amplification to 99 % and the whole "large-spot
+association failure" are all downstream of that single unvalidated velocity.
 
-Open question: why the track diverges far enough to produce NIS in the hundreds while the
-detector is reporting 0.068 px, and why `track.py`'s lockout and competing-hypothesis machinery
-— written for exactly this failure — does not recover. `contest_opened` appears only 3 times in
-47 failing frames, and where a contest ran the **incumbent held**.
+`_initiate` computes `vx = (last_x - first_x) / span` with **no sanity check of any kind**. Any
+spurious first detection becomes a permanent velocity.
+
+### Why this misled us for three sessions
+
+sz5 and sz10 do not fail because their first detection happens to be correct. It is an
+**initiation lottery**, not a property of spot size — larger spots merely make a spurious first
+detection more likely during acquisition, before the scale estimate is adopted. That is also the
+true explanation of the **non-monotonic 0 / 0 / 39.8 / 13.6 %** rate that made a "lottery against
+noise" hypothesis look plausible. The lottery is real; it is at *initiation*, not at ranking.
+
+## P4. Three leaks fixed (commit `1d7fcfe`)
+
+All three fed camera/platform-derived quantities into filtering or ROI sizing regardless of
+whether the source has a camera. All are now keyed on `FrameSource.supports_pan_tilt`. This is
+the third, fourth and fifth instance of this shape — after `gate_shape` computing frame-fraction
+gates from a crop, and pointing error in the lock criterion. **Assume a sixth until checked.**
+
+| leak | effect | status |
+|---|---|---|
+| **A** camera jitter → `R` | `sigma_meas` pinned at 1.6668 px on every clip, across spot 5–20 px and SNR 685–5242 | fixed |
+| **B** `dt` from config, not the source timebase | filter advanced at `camera.update_rate_hz` while `VideoFrameSource` timestamped from the clip's real rate | fixed |
+| **C** ROI sized for slew and jitter a fixed camera lacks | 75 px where 64 px is needed | fixed |
+
+**Leak B is a live Benchmark-2 risk in its own right.** An evaluator clip at 25 or 60 fps would
+have advanced the constant-velocity model at the wrong rate on every frame, silently, with the
+prediction falling behind by a fixed fraction each time. Nothing would have looked broken.
+
+`sigma_meas` before/after: `1.6668` on all four clips → `0.0200` full-frame (floored) and
+`0.1704 / 0.2615` on the large-spot ROI cases. Association failure **unchanged**, as expected:
+inflating `R` makes the gate *more* permissive, so the leak could never have been the cause.
+
+## P5. Two proposed fixes — NEITHER IS IMPLEMENTED
+
+These are separate defects with separate fixes. They are proposals, not conclusions, and each
+should land as its own commit so it stays bisectable.
+
+**1. Bound the initiation velocity.** A two-point pair implying a speed beyond what the system
+can physically track means the older detection is spurious; re-seed from the newer one rather
+than confirming a nonsense track. The bound already exists as a derived quantity —
+`max_trackable_velocity_px_s`, emitted in the telemetry header — so it need not be invented.
+
+**2. Ask why the contest let an incumbent carrying NIS 1147 hold.** The competing-hypothesis
+machinery opened a contest at frames 7 and 23 and the incumbent won at frame 18 while its own
+normalised innovation was in the thousands. A hypothesis that explains nothing should never win
+a contest. This is independent of fix 1 and must not be folded into it.
+
+## P6. Frozen state — unchanged
+
+- **Phase B decisions remain blocked**: ROI shipping decision, AI discriminator re-gate, and the
+  area-gate asymmetry policy all wait on the root cause being fixed rather than merely located.
+- **Phase C re-acquisition is still unmeasured.** Parameter 19 (≤ 1 s) remains our only mandatory
+  spec item with no number. The prediction in §5 stands, untested.
+- **The slide deck does not exist.** There is no `docs/ppt/` directory; slide content is to be
+  generated at Phase F rather than updated.
+- Report §7 carries the ROI throughput figures; the §7.5 caveat about `fhd_1920_bigspot` stands
+  until Phase B resolves it.
+- Suite green at **663 passed**.
