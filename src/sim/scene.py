@@ -14,7 +14,7 @@ canvas coordinates and converted to frame coordinates at exactly one place.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -23,7 +23,7 @@ from src.sim.beacon import BeaconParams, render_beacon
 from src.sim.canvas import Canvas
 from src.sim.trajectories import Trajectory, build_trajectory
 
-__all__ = ["Scene", "SceneState"]
+__all__ = ["Scene", "SceneState", "MultiScene"]
 
 
 @dataclass(frozen=True)
@@ -142,3 +142,126 @@ class Scene:
         self.canvas.clear()
         self._initialised = False
         self._state = SceneState(time=0.0, x=0.0, y=0.0)
+
+
+class MultiScene:
+    """Multiple independent beacons sharing one world canvas.
+
+    Each beacon has its own :class:`Scene` (and therefore its own :class:`Trajectory` and
+    :class:`~src.sim.beacon.BeaconParams`), but all scenes render onto the single shared
+    :class:`Canvas` allocated at construction. The canvas is cleared once per step and all
+    beacons are composited in order, so the output frame is physically correct for any number
+    of simultaneous targets.
+
+    This is the ``target.count > 1`` variant of :class:`Scene`. The primary sub-scene (index 0)
+    drives the shared canvas and its state is the "primary" ground truth; additional sub-scenes
+    add their beacons to the same canvas and contribute ``extra_ground_truths``.
+
+    Attributes:
+        scenes: Ordered list of :class:`Scene` objects. ``scenes[0]`` is the primary target.
+    """
+
+    def __init__(self, scenes: List[Scene]) -> None:
+        """Initialise with a list of pre-built scenes that share one canvas.
+
+        The first scene's canvas is the shared canvas. All subsequent scenes must reference
+        the same :class:`Canvas` object. Use :meth:`from_config` rather than this constructor
+        directly -- it handles the canvas sharing correctly.
+
+        Args:
+            scenes: One or more :class:`Scene` objects. Must not be empty. All must share
+                the same :class:`Canvas` instance.
+
+        Raises:
+            ValueError: If ``scenes`` is empty.
+        """
+        if not scenes:
+            raise ValueError("MultiScene requires at least one Scene")
+        self.scenes = scenes
+
+    @property
+    def canvas(self) -> Canvas:
+        """The shared world canvas."""
+        return self.scenes[0].canvas
+
+    @property
+    def state(self) -> SceneState:
+        """The primary target's most recent state (ground truth for the tracked beacon)."""
+        return self.scenes[0].state
+
+    @classmethod
+    def from_config(cls, config: AppConfig,
+                    rng: Optional[np.random.Generator] = None) -> "MultiScene":
+        """Build N scenes from configuration, sharing one canvas.
+
+        Each sub-scene gets a distinct RNG derived from the master seed so initial positions
+        and trajectory phases differ between targets. All sub-scenes share the same
+        :class:`Canvas` object (allocated once here).
+
+        Args:
+            config: Validated application configuration. ``config.target.count`` determines N.
+            rng: Master seeded generator. Derived from ``config.run.random_seed`` when omitted.
+
+        Returns:
+            A :class:`MultiScene` ready for stepping.
+        """
+        if rng is None:
+            rng = np.random.default_rng(config.run.random_seed)
+
+        n = max(1, config.target.count)
+        shared_canvas = Canvas.from_config(config)
+        scenes: List[Scene] = []
+        for i in range(n):
+            sub_seed = int(rng.integers(0, 2**31))
+            sub_rng = np.random.default_rng(sub_seed)
+            scene = Scene(
+                canvas=shared_canvas,
+                trajectory=build_trajectory(config, sub_rng),
+                beacon=BeaconParams.from_config(config),
+            )
+            scenes.append(scene)
+        return cls(scenes)
+
+    def step(self, dt: float, intensity_scale: float = 1.0) -> List[SceneState]:
+        """Advance all scenes by ``dt`` seconds and redraw all beacons onto the shared canvas.
+
+        The canvas is cleared exactly once, then every beacon is composited in order. The
+        returned list has one :class:`SceneState` per target; index 0 is the primary target.
+
+        Args:
+            dt: Time increment in seconds. Must be non-negative.
+            intensity_scale: Brightness multiplier for this frame (scintillation).
+
+        Returns:
+            A list of :class:`SceneState`, one per target, in the same order as :attr:`scenes`.
+        """
+        self.canvas.clear()
+        states: List[SceneState] = []
+        for scene in self.scenes:
+            if dt > 0 or scene._initialised:
+                x, y = scene.trajectory.step(dt)
+            else:
+                x, y = scene.trajectory.step(0.0)
+            scene._initialised = True
+
+            patch = render_beacon(x, y, scene.beacon, intensity_scale=intensity_scale)
+            self.canvas.composite(patch, mode=scene.composite_mode)
+
+            state = SceneState(
+                time=scene.trajectory.elapsed,
+                x=x,
+                y=y,
+                intensity_scale=intensity_scale,
+                visible=self.canvas.contains(x, y),
+            )
+            scene._state = state
+            states.append(state)
+        return states
+
+    def reset(self) -> None:
+        """Return all scenes to their initial states."""
+        self.canvas.clear()
+        for scene in self.scenes:
+            scene.trajectory.reset()
+            scene._initialised = False
+            scene._state = SceneState(time=0.0, x=0.0, y=0.0)

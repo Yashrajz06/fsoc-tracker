@@ -371,6 +371,7 @@ def test_centroiding_is_reported_for_a_target_parked_far_from_frame_centre(tmp_p
     scenario.write_text(json.dumps({
         "run": {"mode": "video"},
         "video_input": {"path": str(video), "ground_truth_path": str(sidecar)},
+        "ai": {"enabled": False},
     }), encoding="utf-8")
 
     workdir = tmp_path / "run"

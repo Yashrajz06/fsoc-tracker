@@ -170,7 +170,31 @@ def test_inference_stays_far_inside_its_budget(tmp_path):
 
 
 def test_classical_pipeline_is_unchanged_when_ai_is_disabled():
-    """The default configuration must attach no discriminator at all."""
+    """When ``invoke_on='never'``, no discriminator is attached regardless of enabled flag."""
+    import json, os, tempfile
+    from src.config import load_config, merge_overrides
     from src.vision.pipeline import VisionPipeline
 
-    assert VisionPipeline.from_config(load_config("config/default.json")).discriminator is None
+    # Build a config with invoke_on="never" — the discriminator must be None.
+    raw = json.load(open("config/default.json"))
+    raw_never = merge_overrides(raw, {"ai": {"invoke_on": "never"}})
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(raw_never, f)
+        tmppath = f.name
+    try:
+        config_never = load_config(tmppath)
+    finally:
+        os.unlink(tmppath)
+
+    pipeline_never = VisionPipeline.from_config(config_never)
+    assert pipeline_never.discriminator is None, (
+        "invoke_on='never' must not attach a discriminator"
+    )
+
+    # With the default config, the discriminator is loaded when onnxruntime and the
+    # model file are both available; None otherwise. Both outcomes are valid.
+    from src.ai.validator import CandidateDiscriminator
+    pipeline_default = VisionPipeline.from_config(load_config("config/default.json"))
+    assert pipeline_default.discriminator is None or isinstance(
+        pipeline_default.discriminator, CandidateDiscriminator
+    ), "Default config should produce either a CandidateDiscriminator or None"

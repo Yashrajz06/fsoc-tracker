@@ -957,14 +957,24 @@ class VisionConfig:
         roi = int(round(self.roi.size_fwhm_multiple * scale))
         max_roi = int(round(self.roi.max_size_fwhm_multiple * scale))
         max_roi = max(max_roi, roi)
+
+        # Upper bound uses 2x the normal multiple -- deliberate asymmetry.
+        # The area gate argument (DESIGN §5.1) is one-directional: underestimating
+        # scale is catastrophic (beacon gated out), overestimating admits larger blobs
+        # but does not remove the beacon. The lower bound is unchanged.
+        # This is a correctness fix on its own merits. It is NOT a fix for the
+        # initiation-velocity bug (HANDOFF §2) -- those are separate defects.
+        upper_multiple = self.detection.max_blob_area_spot_multiple * 2.0
+        lower_multiple = self.detection.min_blob_area_spot_multiple
+
         return ResolvedVisionGeometry(
             fwhm_px=scale,
             from_fallback=False,
             tophat_kernel_px=_odd(self.preprocess.tophat_kernel_fwhm_multiple * scale,
                                   self.preprocess.tophat_kernel_min_px,
                                   self.preprocess.tophat_kernel_max_px),
-            min_blob_area_px=self.detection.min_blob_area_spot_multiple * spot_area,
-            max_blob_area_px=self.detection.max_blob_area_spot_multiple * spot_area,
+            min_blob_area_px=lower_multiple * spot_area,
+            max_blob_area_px=upper_multiple * spot_area,
             centroid_window_px=_odd(self.centroid.window_fwhm_multiple * scale,
                                     self.centroid.window_min_px,
                                     self.centroid.window_max_px),
@@ -1282,6 +1292,9 @@ class VideoInputConfig:
         ground_truth_path: Optional sidecar CSV of true centroids, if evaluators supply one.
         playback_realtime: Throttle to the file's native rate instead of decoding as fast as
             possible. Off by default so benchmark runs are not rate-limited by playback.
+        colour_display: When ``True`` and the video source provides colour frames, the GUI
+            displays them in colour. The vision pipeline always receives a single-channel grayscale
+            ``frame``; this flag governs the optional ``display_frame`` field only.
     """
 
     path: Optional[str] = None
@@ -1289,6 +1302,7 @@ class VideoInputConfig:
     force_grayscale: bool = True
     normalise_intensity: bool = True
     ground_truth_path: Optional[str] = None
+    colour_display: bool = False
     playback_realtime: bool = False
 
     def validate(self, mode: str) -> None:
@@ -1384,6 +1398,10 @@ class AiConfig:
         confidence_threshold: Minimum confidence to accept a detection.
         max_inference_ms: Per-frame inference budget. Exceeding it must not be allowed to break
             the >= 20 FPS requirement, so the caller treats this as a hard timeout.
+        flux_ratio_threshold: Minimum flux ratio between the top two candidates that must be
+            exceeded before the discriminator is invoked. When ``detections[0].flux /
+            detections[1].flux > flux_ratio_threshold``, classical flux ranking is already
+            reliable and the AI is skipped. Only used when ``invoke_on="multi_candidate"``.
     """
 
     enabled: bool = False
@@ -1392,6 +1410,7 @@ class AiConfig:
     invoke_on: str = "classical_failure"
     confidence_threshold: float = 0.5
     max_inference_ms: float = 20.0
+    flux_ratio_threshold: float = 1.5
 
     def validate(self) -> None:
         """Check AI settings.
@@ -1400,11 +1419,13 @@ class AiConfig:
             ConfigError: If enabled without a model path, or given an unknown invocation mode or
                 an out-of-range confidence threshold.
         """
-        _require(self.invoke_on in ("never", "classical_failure", "always"),
-                 f"ai.invoke_on must be never/classical_failure/always, got {self.invoke_on!r}")
+        _require(self.invoke_on in ("never", "classical_failure", "always", "multi_candidate"),
+                 f"ai.invoke_on must be never/classical_failure/always/multi_candidate, got {self.invoke_on!r}")
         _require(0.0 <= self.confidence_threshold <= 1.0,
                  f"ai.confidence_threshold must be in [0, 1], got {self.confidence_threshold}")
         _require(self.max_inference_ms > 0, "ai.max_inference_ms must be positive")
+        _require(self.flux_ratio_threshold >= 1.0,
+                 f"ai.flux_ratio_threshold must be >= 1.0, got {self.flux_ratio_threshold}")
         if self.enabled:
             _require(self.model_path is not None,
                      "ai.enabled is true but ai.model_path is not set")

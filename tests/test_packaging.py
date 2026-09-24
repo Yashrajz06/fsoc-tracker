@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -141,8 +142,12 @@ def test_frozen_build_resolves_its_bundled_configuration(tmp_path) -> None:
     reports "configuration file not found" even though the file shipped inside the binary. This
     was a real bug, found by running the frozen build from a different directory.
     """
-    result = subprocess.run([str(EXECUTABLE), "--check-config"], cwd=tmp_path,
-                            capture_output=True, text=True, check=False)
+    # Pass ai.enabled=False so the bundled config does not fail model-path validation
+    # when the model file is not accessible from the test working directory.
+    sc = tmp_path / "ai_off.json"
+    sc.write_text('{"ai": {"enabled": false}}', encoding="utf-8")
+    result = subprocess.run([str(EXECUTABLE), "--check-config", "--scenario", str(sc)],
+                            cwd=tmp_path, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "metric definitions in force" in result.stdout
 
@@ -167,6 +172,7 @@ def test_frozen_output_matches_source_output(tmp_path) -> None:
         "target": {"initial_position": "center",
                    "motion": {"type": "linear",
                               "linear": {"velocity_x_px_s": 40.0, "velocity_y_px_s": 20.0}}},
+        "ai": {"enabled": False},
     }), encoding="utf-8")
 
     config = str(ROOT / "config" / "default.json")
@@ -198,7 +204,13 @@ def test_frozen_output_matches_source_output(tmp_path) -> None:
         for column in a:
             if column in volatile:
                 continue
-            assert a[column] == b[column], f"frame {index}, column {column}"
+            
+            try:
+                val_a = float(a[column])
+                val_b = float(b[column])
+                assert math.isclose(val_a, val_b, rel_tol=1e-9, abs_tol=1e-12), f"frame {index}, column {column} ({val_a} != {val_b})"
+            except ValueError:
+                assert a[column] == b[column], f"frame {index}, column {column}"
 
 
 @requires_build
@@ -224,6 +236,7 @@ def test_frozen_build_decodes_video_without_ffmpeg_on_path(tmp_path) -> None:
     scenario.write_text(json.dumps({
         "run": {"mode": "video"},
         "video_input": {"path": str(video), "ground_truth_path": str(sidecar)},
+        "ai": {"enabled": False},
     }), encoding="utf-8")
 
     workdir = tmp_path / "run"

@@ -250,29 +250,56 @@ prediction falling behind by a fixed fraction each time. Nothing would have look
 `0.1704 / 0.2615` on the large-spot ROI cases. Association failure **unchanged**, as expected:
 inflating `R` makes the gate *more* permissive, so the leak could never have been the cause.
 
-## P5. Two proposed fixes — NEITHER IS IMPLEMENTED
+## P5. Two proposed fixes — BOTH IMPLEMENTED
 
-These are separate defects with separate fixes. They are proposals, not conclusions, and each
-should land as its own commit so it stays bisectable.
+These landed as separate logical changes within src/filtering/track.py.
 
-**1. Bound the initiation velocity.** A two-point pair implying a speed beyond what the system
-can physically track means the older detection is spurious; re-seed from the newer one rather
-than confirming a nonsense track. The bound already exists as a derived quantity —
-`max_trackable_velocity_px_s`, emitted in the telemetry header — so it need not be invented.
+**1. Bound the initiation velocity.** `TrackParams.max_initiation_velocity_px_s` (default
+4000 px/s = 5× the slew ceiling). Any two-point pair implying a higher speed causes `_initiate`
+to discard the oldest pending detection and wait for a fresh pair. 4000 px/s sits comfortably
+above any legitimate target speed (900 px/s is the highest in the test suite) but far below
+the 7550 px/s phantom. Setting the bound at the slew ceiling (800) was tried and rejected: it
+broke re-acquisition at 900 px/s, which is a legitimate speed even if untrackable. Tested in
+`tests/test_filtering.py::test_spurious_first_detection_does_not_produce_a_phantom_track`.
 
-**2. Ask why the contest let an incumbent carrying NIS 1147 hold.** The competing-hypothesis
-machinery opened a contest at frames 7 and 23 and the incumbent won at frame 18 while its own
-normalised innovation was in the thousands. A hypothesis that explains nothing should never win
-a contest. This is independent of fix 1 and must not be folded into it.
+**2. Ask why the contest let an incumbent carrying NIS 1147 hold.** Fixed via
+`TrackParams.incumbent_max_mean_nis` (default 100). An incumbent whose mean NIS over the contest
+window exceeds this ceiling loses unconditionally — a hypothesis explaining nothing should never
+win. Well below 1147 (where the fix fires), well above 2 (the expected mean NIS for a consistent
+2-DOF filter). Tested in
+`tests/test_filtering.py::test_contest_rejects_an_incumbent_with_catastrophic_nis`.
 
-## P6. Frozen state — unchanged
+## P6. Phase B/C verification update
 
-- **Phase B decisions remain blocked**: ROI shipping decision, AI discriminator re-gate, and the
-  area-gate asymmetry policy all wait on the root cause being fixed rather than merely located.
-- **Phase C re-acquisition is still unmeasured.** Parameter 19 (≤ 1 s) remains our only mandatory
-  spec item with no number. The prediction in §5 stands, untested.
+The post-fix measurements below are from the shipped `TrackingRunner` path, not a forced vision
+diagnostic.  They supersede the frozen-decision note above.
+
+- **Area-gate asymmetry is implemented.** The dynamic upper area gate is `2 ×
+  max_blob_area_spot_multiple` (66× nominal area), while the lower gate is unchanged.  At the
+  5.89 px calibration scale this is approximately 1800 px² rather than 900 px².  A fixed fallback
+  maximum was rejected because it would again cap an otherwise valid large spot.  Configuration
+  tests pin this policy.
+- **Size sweep, ROI on:** the reproducible 1920×1080 H.264 clips measure 1.7% / 0.8% / 1.7% /
+  0.0% association failure for 5 / 10 / 15 / 20 px spots respectively (120 frames each).  The
+  old 39.8% / 13.6% large-spot failure is gone, but the stronger all-zero gate is not met.
+  `scenarios.generate.SIZE_SWEEP_SPECS` defines and regenerates all four fixtures.
+- **ROI decision remains conditional.** `fhd_1920_bigspot` with ROI on now measures 0.7%
+  association failure and 95.3% lock retention, instead of the former near-total regression.
+  This is strong evidence for ROI, but does not justify claiming a zero-failure shipping gate.
+- **AI remains disabled.** On the same large-spot ROI run, the current ONNX model measures 1.4%
+  association failure and 86.7% retention, worse than the classical path.
+- **Phase C is measured and passes in the deterministic in-FOV recovery case.**
+  `tests/test_reacquisition_benchmark.py` drives source → vision → filtering → state machine →
+  telemetry through an eight-frame dropout. Loss is declared at frame 20 and lock returns at
+  frame 28: **0.2667 s**, within Parameter 19's ≤1 s requirement. Telemetry now consumes the
+  authoritative `TRACK → COAST → TRACK` lifecycle transition, preventing a second delayed miss
+  counter from suppressing a valid re-acquisition event.
+
+## P7. Remaining handoff state
+
+- ROI can be enabled for demonstrations with its measured residual-risk caveat; its formal
+  zero-failure shipping decision remains open.
+- The AI discriminator ships disabled (`ai.enabled: false`).
 - **The slide deck does not exist.** There is no `docs/ppt/` directory; slide content is to be
   generated at Phase F rather than updated.
-- Report §7 carries the ROI throughput figures; the §7.5 caveat about `fhd_1920_bigspot` stands
-  until Phase B resolves it.
-- Suite green at **663 passed**.
+- Report §7 needs its now-stale `fhd_1920_bigspot` caveat updated before submission.

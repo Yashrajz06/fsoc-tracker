@@ -14,7 +14,7 @@ it nominally was -- wander is a real displacement of the received beam, not an i
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 
@@ -23,7 +23,7 @@ from src.camera.viewport import Viewport
 from src.config import AppConfig
 from src.framesource import BaseFrameSource, FrameData, GroundTruth
 from src.noise.pipeline import NoisePipeline
-from src.sim.scene import Scene
+from src.sim.scene import MultiScene, Scene
 
 __all__ = ["SimulationFrameSource"]
 
@@ -33,7 +33,6 @@ class SimulationFrameSource(BaseFrameSource):
 
     Attributes:
         config: Validated application configuration.
-        scene: The world scene being rendered.
         camera: The steerable camera.
         viewport: Viewport extraction, including camera jitter.
         noise: The degradation pipeline.
@@ -50,7 +49,11 @@ class SimulationFrameSource(BaseFrameSource):
         self.config = config
         self._rng = rng if rng is not None else np.random.default_rng(config.run.random_seed)
 
-        self.scene = Scene.from_config(config, self._rng)
+        if config.target.count > 1:
+            self._scene_impl: Union[Scene, MultiScene] = MultiScene.from_config(config, self._rng)
+        else:
+            self._scene_impl = Scene.from_config(config, self._rng)
+
         self.camera = CameraModel.from_config(config)
         jitter = config.noise.camera_jitter
         self.viewport = Viewport(
@@ -63,6 +66,13 @@ class SimulationFrameSource(BaseFrameSource):
         self._index = 0
         self._rate = config.camera.update_rate_hz
         self._total = max(1, int(config.run.duration_seconds * self._rate))
+
+    @property
+    def scene(self) -> Scene:
+        """The primary scene (index 0 for multi-target, the only scene for single-target)."""
+        if isinstance(self._scene_impl, MultiScene):
+            return self._scene_impl.scenes[0]
+        return self._scene_impl
 
     # -- FrameSource protocol ----------------------------------------------------------------
 
@@ -108,9 +118,18 @@ class SimulationFrameSource(BaseFrameSource):
         intensity_scale = self.noise.next_intensity_scale()
         wander_x, wander_y = self.noise.next_beam_wander(dt)
 
-        state = self.scene.step(dt, intensity_scale=intensity_scale)
-        true_x = state.x + wander_x
-        true_y = state.y + wander_y
+        if isinstance(self._scene_impl, MultiScene):
+            states = self._scene_impl.step(dt, intensity_scale=intensity_scale)
+            state = states[0]
+            true_x = state.x + wander_x
+            true_y = state.y + wander_y
+            extra_gts = []
+        else:
+            states = None
+            state = self._scene_impl.step(dt, intensity_scale=intensity_scale)
+            true_x = state.x + wander_x
+            true_y = state.y + wander_y
+            extra_gts = []
 
         if wander_x or wander_y:
             # Re-render at the wandered position so the image and the truth agree.
@@ -124,6 +143,19 @@ class SimulationFrameSource(BaseFrameSource):
         degraded = self.noise.apply(view.frame, intensity_scale)
 
         local_x, local_y = view.canvas_to_frame(true_x, true_y)
+
+        # Re-compute extra ground truths using the final view (after wander re-render)
+        if isinstance(self._scene_impl, MultiScene):
+            extra_gts = []
+            for extra_state in states[1:]:
+                ex, ey = view.canvas_to_frame(extra_state.x, extra_state.y)
+                extra_gts.append(GroundTruth(
+                    x=ex, y=ey,
+                    visible=view.contains(extra_state.x, extra_state.y),
+                    world_x=extra_state.x,
+                    world_y=extra_state.y,
+                ))
+
         data = FrameData(
             frame=degraded.frame,
             timestamp=self._index / self._rate,
@@ -133,6 +165,7 @@ class SimulationFrameSource(BaseFrameSource):
                                      world_x=true_x, world_y=true_y),
             camera_pan_deg=self.camera.pan_deg,
             camera_tilt_deg=self.camera.tilt_deg,
+            extra_ground_truths=extra_gts if extra_gts else None,
         )
         self._index += 1
         return data
@@ -149,7 +182,7 @@ class SimulationFrameSource(BaseFrameSource):
 
     def reset(self) -> None:
         """Return the simulation to its initial state for a reproducible re-run."""
-        self.scene.reset()
+        self._scene_impl.reset()
         self.camera.reset()
         self.noise.reset()
         self._index = 0

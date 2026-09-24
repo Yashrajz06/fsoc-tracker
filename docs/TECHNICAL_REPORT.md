@@ -358,16 +358,19 @@ On a run of missed detections the window expands geometrically, capped at the ce
 prediction after a loss is wrong by a growing amount, and a window sized for the locked case
 cannot contain the target it is trying to recover.
 
-### 7.5 Caveat: one clip regresses under ROI
+### 7.5 Residual ROI risk on the large-spot clip
 
-On `fhd_1920_bigspot`, enabling ROI raises the association-failure rate from 10.8 % to 100 %. The
-mechanism is that an ROI makes an association error **self-reinforcing**: full-frame, the detector
-re-finds the true target after a wrong lock; once the window follows the wrong object, the true
-target is outside it and can never be re-found. Expansion-on-loss does not help, because the
-detector never *misses* — it confidently finds the wrong thing every frame.
+The pre-fix investigation found that ROI amplified a phantom-velocity wrong lock into a 100 %
+association failure. The initiation-velocity bound and incumbent-NIS ceiling resolve that root
+cause. Re-running `fhd_1920_bigspot` with ROI now measures **0.7 %** association failure and
+**95.3 %** lock retention (one rejected detection in 150 frames), rather than the former
+near-total regression.
 
-That clip's baseline association failure is itself under investigation (§15), and the ROI shipping
-decision is deliberately not closed until it resolves.
+ROI still has a residual association risk and must not be described as a zero-failure mechanism.
+The shipping decision is therefore conditional on accepting that measured risk, rather than on
+the obsolete claim that the clip regresses to 100 %. The adaptive ROI expansion remains important:
+it is the recovery path when detections genuinely cease, whereas it cannot correct a detector
+that continues to report a wrong object.
 
 ## 8. Honest limits
 
@@ -575,9 +578,10 @@ failure was unambiguously a Qt problem rather than a base-packaging one.
 ## 15. Open items
 
 - The candidate discriminator (§5.5) is implemented, trained, tested and bundled, but ships
-  **disabled by default**: it fails the shipping gate on `fhd_1920_bigspot`, where it raises
-  association failure from 10.8% to 96.6%. Re-training with large-spot examples better
-  represented is the obvious next step, but it is not on the critical path.
+  **disabled by default**. After the phantom-velocity fix, its fresh ROI-on measurement on
+  `fhd_1920_bigspot` is still worse than the classical path: 1.4% association failure and 86.7%
+  retention, versus 0.7% and 95.3%. Re-training with representative large-spot examples remains
+  the obvious next step, but is not on the critical path.
 - `lowlight_impulse` never locks (§8.3), and this is now known to be a detection-sensitivity
   limit rather than a ranking one -- the beacon is surfaced as a candidate in only 34/150 frames.
 - Clean-machine container verification: distributions verified and unverified are listed in

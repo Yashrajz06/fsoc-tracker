@@ -120,6 +120,15 @@
         "mu_x": 1000.0,
         "mu_y": 1000.0,
         "sigma": 40.0
+      },
+      "custom": {
+        "velocity_x_px_s": 80.0,
+        "velocity_y_px_s": 40.0,
+        "amplitude_x_px": 120.0,
+        "amplitude_y_px": 200.0,
+        "frequency_x_hz": 0.15,
+        "frequency_y_hz": 0.08,
+        "_note": "Linear drift with independent sinusoidal oscillation on each axis. x(t)=x0+vx*t+Ax*sin(2pi*fx*t), y(t)=y0+vy*t+Ay*sin(2pi*fy*t)."
       }
     },
     "_shape_comment": "Spec parameter 9: 'User-defined, Default: Square'. Square is the default because the specification says so, not because it is the most physically faithful beacon -- a real optical beacon is closer to the gaussian option. All three shapes are implemented and characterised; see the shape-split centroid-error-vs-SNR curve in the technical report."
@@ -274,7 +283,7 @@
       "percentile": 99.5,
       "min_blob_area_spot_multiple": 0.15,
       "max_blob_area_spot_multiple": 33.0,
-      "_area_note": "Multiples of the nominal spot area (pi/4)*FWHM^2 = 27.2 px^2 at default scale. 0.15 and 33.0 reproduce the previous absolute gates of 4 and 900 px^2 exactly at default scale. The upper gate is deliberately permissive pre-lock; Phase 3 should tighten it with SNR-sweep evidence rather than by guess.",
+      "_area_note": "Multiples of the nominal spot area (pi/4)*FWHM^2 = 27.2 px^2 at the 5.89 px calibration scale. The lower gate remains 0.15 (about 4 px^2); the derived upper gate deliberately applies a 2x asymmetry factor to 33.0, giving about 1800 px^2. Underestimating spot scale must not reject a real bloomed beacon; clipping and saturation are instead reported and down-weighted by filtering. The fallback upper gate remains 900 px^2 because it is used only while scale is unknown.",
       "min_blob_area_fallback_px": 4,
       "max_blob_area_fallback_px": 900,
       "min_circularity": 0.3,
@@ -409,7 +418,8 @@
     "force_grayscale": true,
     "normalise_intensity": true,
     "ground_truth_path": null,
-    "_ground_truth_comment": "Optional sidecar CSV of true centroids if evaluators provide one"
+    "_ground_truth_comment": "Optional sidecar CSV of true centroids if evaluators provide one",
+    "colour_display": false
   },
   "gui": {
     "enabled": true,
@@ -420,18 +430,19 @@
     "_not_implemented": "No performance knob is consumed. Numba is selected by the build (scripts/build.sh --with-numba), not by configuration; there is no threading or profiling layer. Section kept as a placeholder only."
   },
   "ai": {
-    "_comment": "Optional lightweight CNN fallback for re-acquisition/validation. Classical CV remains the primary path.",
-    "enabled": false,
-    "model_path": null,
+    "_comment": "Lightweight CNN candidate discriminator. Classical CV remains the primary path. Enabled with conservative guards: only invoked when two candidates have close flux (ratio <= flux_ratio_threshold), and only accepted when confidence >= confidence_threshold. Disabled on single-candidate frames where flux ranking is unambiguous.",
+    "enabled": true,
+    "model_path": "models/discriminator.onnx",
     "backend": "onnxruntime",
-    "invoke_on": "classical_failure",
+    "invoke_on": "multi_candidate",
     "_invoke_on_options": [
       "never",
       "classical_failure",
-      "always"
+      "always",
+      "multi_candidate"
     ],
-    "confidence_threshold": 0.5,
-    "max_inference_ms": 20.0,
-    "_not_implemented": "Only 'enabled' is consumed, and it is false. model_path, backend, invoke_on, confidence_threshold and max_inference_ms are inert until the ONNX validator lands. Editing them today has no effect."
+    "confidence_threshold": 0.65,
+    "flux_ratio_threshold": 1.5,
+    "max_inference_ms": 10.0
   }
 }

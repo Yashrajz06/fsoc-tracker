@@ -52,6 +52,7 @@ class ViewportWidget(QWidget):
     ESTIMATE_COLOUR = "#ff9f1c"
     ROI_COLOUR = "#58a6ff"
     BORESIGHT_COLOUR = "#8b949e"
+    EXTRA_TARGET_COLOUR = "#c792ea"  # purple, distinct from truth (green) and estimate (orange)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Create an empty viewport."""
@@ -64,6 +65,7 @@ class ViewportWidget(QWidget):
         self._scene: Optional[Tuple[int, int]] = None
         self._error_px: Optional[float] = None
         self._state = ""
+        self._extra_truths: list = []  # list of (x, y) for extra targets
         self.setMinimumSize(560, 420)
 
     def _in_frame(self, point: Tuple[float, float]) -> bool:
@@ -105,6 +107,10 @@ class ViewportWidget(QWidget):
         self._estimate = outcome.estimate_xy
         truth = outcome.frame_data.ground_truth
         self._truth = (truth.x, truth.y) if truth is not None else None
+        self._extra_truths = [
+            (gt.x, gt.y)
+            for gt in (outcome.frame_data.extra_ground_truths or [])
+        ]
         self._roi = outcome.roi
         self._origin = outcome.origin
         self._error_px = outcome.record.centroid_error_px
@@ -314,6 +320,16 @@ class ViewportWidget(QWidget):
             painter.setBrush(Qt.NoBrush)
             painter.drawEllipse(int(tx - 13), int(ty - 13), 26, 26)
             labelled(self._truth, self.TRUTH_COLOUR, "BEACON (true position)", -46, -30)
+
+        # Extra targets (multi-target mode) — drawn after the primary so primary is never occluded
+        for idx, extra_pos in enumerate(self._extra_truths):
+            if self._in_frame(extra_pos):
+                ex, ey = to_screen(extra_pos)
+                painter.setPen(QPen(QColor(self.EXTRA_TARGET_COLOUR), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(int(ex - 13), int(ey - 13), 26, 26)
+                labelled(extra_pos, self.EXTRA_TARGET_COLOUR,
+                         f"BEACON {idx + 2}", -46, -30 - (idx * 14))
 
         if self._estimate is not None and self._in_frame(self._estimate):
             ex, ey = to_screen(self._estimate)

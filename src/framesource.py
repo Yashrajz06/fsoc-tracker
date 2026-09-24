@@ -27,7 +27,7 @@ See ``docs/DESIGN.md`` section 8 for the full dual-mode architecture rationale.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, Optional, Protocol, Tuple, runtime_checkable
+from typing import Iterator, List, Optional, Protocol, Tuple, runtime_checkable
 
 import numpy as np
 
@@ -74,6 +74,12 @@ class FrameData:
         camera_pan_deg: Camera boresight pan angle at capture time. ``None`` in video mode,
             where there is no virtual camera.
         camera_tilt_deg: Camera boresight tilt angle at capture time. ``None`` in video mode.
+        extra_ground_truths: Additional target ground-truth states for targets beyond the
+            primary. ``None`` when only one target is active. Frame-local coordinates, same
+            convention as ``ground_truth``.
+        display_frame: Optional 3-channel BGR array for colour display in the GUI. Always
+            ``None`` for simulation frames. When present, the pipeline always uses the
+            single-channel ``frame``; this field exists only for rendering.
     """
 
     frame: np.ndarray
@@ -82,6 +88,8 @@ class FrameData:
     ground_truth: Optional[GroundTruth] = None
     camera_pan_deg: Optional[float] = None
     camera_tilt_deg: Optional[float] = None
+    extra_ground_truths: Optional[List[GroundTruth]] = None
+    display_frame: Optional[np.ndarray] = None
 
     @property
     def shape(self) -> Tuple[int, int]:

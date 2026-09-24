@@ -116,10 +116,45 @@ class TrackParams:
         contest_nis_margin: Factor by which the challenger's mean NIS must beat the incumbent's to
             win. A margin above 1 means ties go to the incumbent, which is the conservative
             direction -- an established track is evidence in itself.
+        incumbent_max_mean_nis: Upper bound on the incumbent's mean NIS over the contest window.
+            An incumbent that exceeds this threshold **never wins**, regardless of the challenger's
+            score. A consistent 2-DOF filter has a mean NIS of about 2; any value in the
+            hundreds means the incumbent's state is explaining nothing.
+
+            This closes the case found in Phase A where an incumbent with NIS 1147 held because
+            the challenger had not yet accumulated enough evidence, and the challenger could not
+            win a contest the incumbent should never survive. The bound is intentionally generous
+            (default 100) -- far above the chi-squared 99% consistency boundary, but far below
+            the thousands seen in a phantom-velocity track.
         gate_during_initiation: Apply the validation gate while initiating. Off by default:
             gating against a state that is not yet established is precisely the lockout mechanism.
         max_association_px: Sanity bound on how far a detection may be from the prediction during
             initiation, when the gate is not in use.
+        max_initiation_velocity_px_s: Upper bound on the speed implied by a two-point initiation
+            pair. A pair that implies a speed above this means the **first** detection was spurious
+            -- one bad measurement is far more likely than a genuine target moving at an absurd
+            fraction above the slew ceiling. The response is to **discard the oldest buffered
+            detection and wait for a fresh pair** rather than confirming a phantom track.
+
+            The root cause (Phase A §P3): the first detection on a large-spot clip was 499.9 px
+            from the true position, and the second was correct. Two-point initiation derived
+            7550 px/s from that pair, far above the measured 279 px/s trackable ceiling and the
+            800 px/s slew ceiling. The track then flew off in a straight line at 251.7 px/frame
+            and gated out every subsequent correct detection, producing the observed 39.8% / 13.6%
+            association failure on 15 px / 20 px spots.
+
+            The default is **5 × the slew ceiling = 4000 px/s**. Rationale:
+
+            * A real target passing through the FOV at above the slew ceiling is physically
+              possible even if untrackable -- the initiation should complete so the filter can
+              at least coast.
+            * Initiation measurement noise on two closely-spaced frames can magnify a moderate
+              actual speed into a number somewhat above the slew ceiling (800 px/s) without
+              any detection being spurious. A margin of 5× absorbs that.
+            * 7550 px/s >> 4000 px/s, so the phantom case is still caught decisively.
+            * Setting the bound at exactly the slew ceiling (800 px/s) was tried and broke the
+              existing re-acquisition test at 900 px/s, which is a legitimate above-ceiling speed
+              that the tracker should still survive.
     """
 
     confirm_m_of_n: Tuple[int, int] = (3, 5)
@@ -127,8 +162,10 @@ class TrackParams:
     max_consecutive_rejections: int = 5
     contest_window_frames: int = 12
     contest_nis_margin: float = 4.0
+    incumbent_max_mean_nis: float = 100.0
     gate_during_initiation: bool = False
     max_association_px: float = 100.0
+    max_initiation_velocity_px_s: float = 4000.0
 
 
 @dataclass(frozen=True)
@@ -226,6 +263,13 @@ class Track:
         zero. That single change removes the systematic prediction lag that otherwise causes the
         gate to lock out every subsequent measurement.
 
+        **Velocity sanity check (Phase A §P3 fix).** If the implied speed exceeds
+        :attr:`TrackParams.max_initiation_velocity_px_s`, the *oldest* buffered detection is
+        discarded and initiation waits for a fresh pair. One bad measurement is far more likely
+        than a genuine target moving at 10x the trackable envelope. Without this check, a single
+        spurious detection at frame 0 produced a 7550 px/s phantom track that gated out every
+        subsequent correct detection for the entire clip.
+
         Args:
             x: Detection x.
             y: Detection y.
@@ -248,6 +292,16 @@ class Track:
             vy = (last_y - first_y) / span
         else:
             vx = vy = 0.0
+
+        speed = math.hypot(vx, vy)
+        if speed > self.params.max_initiation_velocity_px_s:
+            # The oldest detection is the likely culprit: the most recent measurement caused the
+            # speed to look implausible, so the candidate pair that spans from a bad old point to
+            # a good new one is the problem. Discard the oldest and stay in INITIATING so a fresh
+            # pair that was never poisoned by the bad first detection can complete initiation.
+            self._pending.pop(0)
+            self._status = TrackStatus.INITIATING
+            return
 
         self.filter.initialise(last_x, last_y, vx, vy)
         self._status = TrackStatus.CONFIRMED
@@ -412,10 +466,17 @@ class Track:
             return None
 
         # Resolve. Ties go to the incumbent: an established track is evidence in itself.
+        # Exception: an incumbent whose mean NIS exceeds the hard ceiling is explaining nothing
+        # and must not hold regardless of the challenger's score (Phase A §P5 fix 2). A
+        # consistent 2-DOF filter has mean NIS ~2; any value in the hundreds or thousands means
+        # the state is physically impossible and the incumbent should never survive the contest.
+        incumbent_failed_nis_gate = (
+            contest.incumbent_mean_nis > self.params.incumbent_max_mean_nis)
         challenger_wins = (
             self._challenger is not None
-            and contest.challenger_mean_nis * self.params.contest_nis_margin
-            < contest.incumbent_mean_nis)
+            and (incumbent_failed_nis_gate
+                 or contest.challenger_mean_nis * self.params.contest_nis_margin
+                 < contest.incumbent_mean_nis))
         return self._close_contest(winner_is_challenger=challenger_wins)
 
     def _close_contest(self, winner_is_challenger: bool) -> str:

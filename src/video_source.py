@@ -95,6 +95,7 @@ class VideoFrameSource(BaseFrameSource):
     def __init__(self, path: str | Path, force_grayscale: bool = True,
                  normalise_intensity: bool = False,
                  ground_truth_path: Optional[str | Path] = None,
+                 colour_display: bool = False,
                  nominal_rate_hz: Optional[float] = None) -> None:
         """Open a video file.
 
@@ -107,6 +108,9 @@ class VideoFrameSource(BaseFrameSource):
                 stretching the range first discards the absolute levels that saturation detection
                 depends on.
             ground_truth_path: Optional sidecar CSV of true centroids.
+            colour_display: When ``True``, capture a BGR copy of the frame for colour display in
+                the GUI before converting to grayscale for the pipeline. The pipeline always
+                receives a single-channel ``frame``; ``display_frame`` carries the colour version.
             nominal_rate_hz: Override the container's frame rate, used when it is missing or
                 obviously wrong.
 
@@ -124,6 +128,7 @@ class VideoFrameSource(BaseFrameSource):
 
         self.force_grayscale = force_grayscale
         self.normalise_intensity = normalise_intensity
+        self.colour_display = colour_display
 
         # Auto-detect: never assume a resolution.
         self.width = int(self._capture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -153,9 +158,10 @@ class VideoFrameSource(BaseFrameSource):
         video = config.video_input
         if video.path is None:
             raise ValueError("run.mode='video' requires video_input.path")
-        return cls(video.path, force_grayscale=video.force_grayscale,
+        return cls(video.path, force_grayscale=not video.colour_display,
                    normalise_intensity=video.normalise_intensity,
-                   ground_truth_path=video.ground_truth_path)
+                   ground_truth_path=video.ground_truth_path,
+                   colour_display=video.colour_display)
 
     # -- FrameSource protocol ----------------------------------------------------------------
 
@@ -195,10 +201,16 @@ class VideoFrameSource(BaseFrameSource):
             A :class:`FrameData` with a single-channel ``uint8`` frame, or ``None`` at end of
             stream.
         """
-        ok, frame = self._capture.read()
-        if not ok or frame is None:
+        ok, raw_frame = self._capture.read()
+        if not ok or raw_frame is None:
             return None
 
+        # Capture colour copy for display BEFORE converting to grayscale for the pipeline
+        display_bgr = None
+        if self.colour_display and raw_frame.ndim == 3 and raw_frame.shape[2] == 3:
+            display_bgr = np.ascontiguousarray(raw_frame)
+
+        frame = raw_frame
         if frame.ndim == 3:
             # Colour is converted here so no downstream module has to consider channel count.
             frame = (cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if self.force_grayscale
@@ -219,7 +231,8 @@ class VideoFrameSource(BaseFrameSource):
 
         data = FrameData(frame=frame, timestamp=self._index / self._rate,
                          frame_index=self._index, ground_truth=truth,
-                         camera_pan_deg=None, camera_tilt_deg=None)
+                         camera_pan_deg=None, camera_tilt_deg=None,
+                         display_frame=display_bgr)
         self._index += 1
         return data
 

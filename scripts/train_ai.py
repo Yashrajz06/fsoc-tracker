@@ -31,6 +31,8 @@ from src.ai.model import ConvNet  # noqa: E402
 from src.config import load_config  # noqa: E402
 
 #: Training clips. Distinct in name, geometry, noise and seed from ``DEFAULT_SPECS``.
+#: Specs now cover the full spec-mandated beacon size range (5–20 px) to prevent
+#: the discriminator from being confidently wrong on large-spot clips.
 TRAIN_SPECS = (
     VideoSpec("tr_impulse_dim", width=640, height=480, frames=90, peak=65.0, background=10.0,
               gaussian_sigma=14.0, sp_density=0.09, bitrate_kbps=1100),
@@ -45,6 +47,14 @@ TRAIN_SPECS = (
     VideoSpec("tr_fog", width=800, height=600, frames=60, size_px=12.0, sigma_px=3.5,
               peak=200.0, background=20.0, gaussian_sigma=9.0, motion="circular",
               atmosphere=AtmosphericParams(beta=0.6, airlight=150.0, blur_sigma=1.2)),
+    VideoSpec("tr_large_spot", width=960, height=720, frames=90, size_px=20.0, sigma_px=5.5,
+              peak=200.0, background=15.0, gaussian_sigma=8.0, sp_density=0.05, bitrate_kbps=2000,
+              motion="circular"),
+    VideoSpec("tr_medium_spot", width=800, height=600, frames=90, size_px=14.0, sigma_px=3.8,
+              peak=180.0, background=12.0, gaussian_sigma=10.0, sp_density=0.07, bitrate_kbps=1600,
+              motion="figure8"),
+    VideoSpec("tr_small_spot", width=640, height=480, frames=90, size_px=5.0, sigma_px=1.2,
+              peak=160.0, gaussian_sigma=8.0, sp_density=0.08, bitrate_kbps=1200),
 )
 
 

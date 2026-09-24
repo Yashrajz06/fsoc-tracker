@@ -244,12 +244,11 @@ def test_pid_kp_saturates_the_slew_limit_at_the_design_error(config: AppConfig) 
 # ------------------------------------------------------------------------------------------
 
 
-def test_resolved_geometry_reproduces_previous_absolutes_at_default_scale(config: AppConfig) -> None:
-    """At the default spot scale the multiples must reproduce the old hardcoded values.
+def test_resolved_geometry_applies_the_documented_upper_gate_asymmetry(config: AppConfig) -> None:
+    """The upper area gate is deliberately twice as permissive as its base multiple.
 
-    The scale-relative parameterisation is a generalisation, not a retune: at the scale it was
-    calibrated for it must land on the same numbers, so any behaviour change observed later is
-    attributable to the estimator rather than to a silent shift in defaults.
+    A low scale estimate must not reject a legitimate bloomed beacon. The lower gate retains its
+    original calibration; only the upper bound applies the documented 2x asymmetry factor.
     """
     # The calibration scale is stated explicitly rather than read from the current default
     # shape. The multiples were calibrated against a gaussian spot of sigma 2.5 (FWHM 5.89), and
@@ -264,7 +263,7 @@ def test_resolved_geometry_reproduces_previous_absolutes_at_default_scale(config
     assert geometry.centroid_window_px == 21
     assert geometry.roi_size_px == 65  # 11 * 5.89, versus the previous fixed 64
     assert geometry.min_blob_area_px == pytest.approx(4.0, abs=0.5)
-    assert geometry.max_blob_area_px == pytest.approx(900.0, abs=20.0)
+    assert geometry.max_blob_area_px == pytest.approx(1800.0, abs=25.0)
 
 
 def test_default_target_shape_matches_the_specification(config: AppConfig) -> None:
@@ -351,11 +350,11 @@ def test_invalid_spot_scale_estimate_is_rejected(config: AppConfig) -> None:
 
 
 def test_nominal_spot_area_is_consistent(config: AppConfig) -> None:
-    """The reference area the blob gates multiply is (pi/4) * FWHM^2."""
+    """The upper gate applies its documented two-times asymmetry factor."""
     geometry = config.vision.resolve_geometry(10.0)
     assert geometry.nominal_spot_area_px == pytest.approx(math.pi / 4.0 * 100.0)
     ratio = geometry.max_blob_area_px / geometry.nominal_spot_area_px
-    assert ratio == pytest.approx(config.vision.detection.max_blob_area_spot_multiple)
+    assert ratio == pytest.approx(2.0 * config.vision.detection.max_blob_area_spot_multiple)
 
 
 # ------------------------------------------------------------------------------------------

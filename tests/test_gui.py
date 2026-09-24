@@ -146,7 +146,9 @@ def test_unimplemented_optional_parameters_are_disclosed(qt_app, config) -> None
     one and the camera type is a label rather than a selector.
     """
     panel = ControlPanel(config)
-    assert panel.target_count.minimum() == panel.target_count.maximum() == 1
+    # multi-target is now implemented: range is 1-4
+    assert panel.target_count.minimum() == 1
+    assert panel.target_count.maximum() == 4
     assert not hasattr(panel, "camera_type_selector")
     source = (Path(__file__).resolve().parents[1] / "src" / "gui" / "controls.py").read_text()
     assert "colour" in source and "not implemented" in source

@@ -30,6 +30,7 @@ dropping frames. Pipeline capacity is measured separately and unthrottled
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field, asdict
 from typing import ClassVar, Dict, List, Optional, Tuple
@@ -93,6 +94,9 @@ class FrameRecord:
         camera_tilt_deg: Boresight tilt angle.
         slew_saturated: Whether the rate command hit the slew ceiling. A physical limit, not a
             tracking failure -- indistinguishable in a pointing-error plot unless logged.
+        extra_targets: JSON-encoded list of extra-target ground-truth positions when
+            ``target.count > 1``. Each entry is a compact ``{"x": float, "y": float, "visible": bool}``.
+            ``None`` for single-target runs.
     """
 
     frame_index: int
@@ -126,6 +130,7 @@ class FrameRecord:
     camera_pan_deg: Optional[float] = None
     camera_tilt_deg: Optional[float] = None
     slew_saturated: bool = False
+    extra_targets: Optional[str] = None
 
     def as_row(self) -> Dict[str, object]:
         """Return the record as a flat mapping suitable for CSV or JSON."""
@@ -317,6 +322,7 @@ class MetricsAccumulator:
         self._established = False
         self._clock_start_s: Optional[float] = None
         self._clock_started = False
+        self._previous_state = ""
 
     def add(self, record: FrameRecord) -> None:
         """Add one frame and advance the acquisition state.
@@ -349,6 +355,27 @@ class MetricsAccumulator:
                     frame_index=record.frame_index))
                 self._established = True
                 self._clock_start_s = None
+            self._previous_state = record.state
+            return
+
+        # The state machine is the authoritative place where loss is declared.  Counting a
+        # second N-frame run of unlocked telemetry here delays (and can entirely suppress) the
+        # re-acquisition clock: once TRACK enters COAST, its early coast frames may remain
+        # filter-predicted and therefore look locked to this accumulator.  Prefer its explicit
+        # lifecycle transition whenever a runner provides state; preserve the historical
+        # detection-based fallback for synthetic records that omit it.
+        if record.state:
+            entering_coast = record.state == "coast" and self._previous_state != "coast"
+            returning_to_track = (record.state == "track" and self._previous_state == "coast")
+            if entering_coast:
+                self._clock_start_s = record.timestamp
+            elif returning_to_track and self._clock_start_s is not None:
+                self.acquisitions.append(AcquisitionRecord(
+                    duration_s=record.timestamp - self._clock_start_s,
+                    population="in_fov", reacquisition=True,
+                    frame_index=record.frame_index))
+                self._clock_start_s = None
+            self._previous_state = record.state
             return
 
         if self._clock_start_s is None and self._consecutive_missed >= self.loss_declare_frames:

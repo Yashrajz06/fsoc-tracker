@@ -199,7 +199,20 @@ def selftest(stream=None) -> int:
 
     config_path = default_config_path()
     try:
-        config = load_config(config_path)
+        # When frozen, resolve the AI model path through the bundle so validation succeeds.
+        # The config stores model_path as a relative string; in a frozen build that must be
+        # mapped to sys._MEIPASS before the AiConfig.validate() path-existence check runs.
+        import json as _json
+        _raw = _json.loads(open(config_path, encoding="utf-8").read())
+        if (getattr(sys, "frozen", False) and
+                isinstance(_raw.get("ai"), dict) and _raw["ai"].get("enabled")):
+            _model_rel = _raw["ai"].get("model_path")
+            if _model_rel:
+                _resolved = bundled_resource(_model_rel)
+                if _resolved:
+                    _raw["ai"]["model_path"] = _resolved
+        from src.config import AppConfig as _AppConfig
+        config = _AppConfig.from_dict(_raw, source_path=config_path)
         results.append(("bundled config", True, config_path))
     except Exception as exc:
         config = None

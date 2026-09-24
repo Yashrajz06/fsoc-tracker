@@ -1,0 +1,1 @@
+{"run": {"mode": "video"}, "video_input": {"path": "sweep/square_bright.mp4", "ground_truth_path": "sweep/square_bright_truth.csv"}}

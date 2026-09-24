@@ -464,3 +464,139 @@ def test_track_reset_clears_everything() -> None:
     track.reset()
     assert track.status is TrackStatus.EMPTY
     assert not track.filter.initialised
+
+
+# ------------------------------------------------------------------------------------------
+# Fix 1 — initiation velocity bound  (Phase A §P3)
+# ------------------------------------------------------------------------------------------
+
+
+def test_spurious_first_detection_does_not_produce_a_phantom_track() -> None:
+    """A single bad first detection must not lock the track onto a phantom velocity.
+
+    Phase A §P3: on a large-spot clip the first detection was 499.9 px from the true position.
+    Two-point initiation derived 7550 px/s from that pair, far above the 279 px/s trackable
+    ceiling. The track then flew at 251.7 px/frame and gated out every subsequent correct
+    detection (39.8 % / 13.6 % association failure on 15 / 20 px spots).
+
+    The fix: if the implied speed exceeds `max_initiation_velocity_px_s` the oldest pending
+    detection is discarded and initiation waits for a fresh pair. The velocity should come from
+    two *correct* detections, not from one bad and one good.
+
+    The default bound is 4000 px/s (5× the slew ceiling). 7550 px/s >> 4000, so the phantom is
+    still caught; and 900 px/s (the highest legitimate speed in the test suite) << 4000.
+    """
+    # Use the default bound (4000 px/s), which is well above any real target speed but far
+    # below the 7550 px/s phantom that triggered this bug.
+    params = TrackParams(confirm_m_of_n=(3, 5), max_initiation_velocity_px_s=4000.0)
+    track = Track(params)
+
+    true_speed_px_s = 71.1  # the actual target speed from Phase A
+    true_start = (320.0, 240.0)
+
+    # Frame 0: spurious detection ~500 px away from truth. With DT=1/30 s, the implied speed
+    # between frame 0 and frame 1 (which lands ~2.4 px away) is roughly 499*30 = 14970 px/s --
+    # far above 4000, so the oldest detection is discarded.
+    t0 = 0.0
+    track.update((true_start[0] + 499.0, true_start[1]), DT, t0)
+    assert track.status is TrackStatus.INITIATING
+
+    # Frames 1+: correct detections. Without the fix the track would confirm on frames 0-1
+    # with a 7550+ px/s phantom and gate out everything from frame 3 onward.
+    for step in range(1, 20):
+        t = step * DT
+        truth = (true_start[0] + true_speed_px_s * t, true_start[1] + 0.5 * true_speed_px_s * t)
+        update = track.update(truth, DT, t, snr_aperture=100.0)
+
+    # The track must have confirmed on the correct detections and hold a plausible state.
+    assert track.is_established, "track never confirmed after correct detections"
+    vx, vy = track.filter.velocity
+    speed = math.hypot(vx, vy)
+    assert speed < 4000.0, f"phantom velocity leaked through: {speed:.1f} px/s"
+    assert speed == pytest.approx(true_speed_px_s, rel=0.20), \
+        f"recovered velocity {speed:.1f} px/s is far from truth {true_speed_px_s:.1f} px/s"
+
+
+def test_fast_but_realistic_target_still_initiates() -> None:
+    """A target moving quickly but within the bound must still confirm normally.
+
+    The velocity bound must not block legitimate fast targets -- only absurdly spurious ones.
+    The default bound is 4000 px/s; targets at 900 px/s (the highest in the test suite) must
+    pass through without triggering the discard.
+    """
+    # 900 px/s: above the slew ceiling (800) but well below the bound (4000).
+    speed = 900.0
+    params = TrackParams(confirm_m_of_n=(3, 5), max_initiation_velocity_px_s=4000.0)
+    track = Track(params)
+    for t, z, _ in _moving_measurements(8, speed, 0.0, seed=7):
+        track.update(z, DT, t, snr_aperture=100.0)
+    assert track.is_established
+
+
+# ------------------------------------------------------------------------------------------
+# Fix 2 — contest NIS gate  (Phase A §P5 fix 2)
+# ------------------------------------------------------------------------------------------
+
+
+def test_contest_rejects_an_incumbent_with_catastrophic_nis() -> None:
+    """An incumbent with mean NIS in the hundreds must never win a contest.
+
+    Phase A §P5 fix 2: at frame 18, a correct challenger lost the contest to an incumbent
+    carrying NIS = 1147, because the classic NIS-margin test asks \"is the challenger better?\"
+    rather than \"is the incumbent even coherent?\". A hypothesis explaining nothing should not
+    be kept regardless of what the challenger scores over the window so far.
+    """
+    # Set a generous NIS ceiling (well below 1147) and a long enough window to accumulate NIS.
+    params = TrackParams(
+        confirm_m_of_n=(3, 5),
+        max_consecutive_rejections=3,
+        contest_window_frames=8,
+        incumbent_max_mean_nis=100.0,
+    )
+    track = Track(params)
+
+    # Confirm on a slow target.
+    for step in range(6):
+        track.update((100.0, 100.0), DT, step * DT, snr_aperture=100.0)
+    assert track.status is TrackStatus.CONFIRMED
+
+    # Now a fast target starts at a completely different location. The incumbent's state (near
+    # 100, 100 with near-zero velocity) will accumulate enormous NIS against these detections.
+    reasons = []
+    for step in range(6, 6 + 20):
+        fast_pos = (100.0 + 400.0 * (step - 5) * DT, 100.0)
+        update = track.update(fast_pos, DT, step * DT, snr_aperture=100.0)
+        reasons.append(update.reason)
+
+    # The challenger must have won -- the incumbent's NIS ceiling forces it out.
+    assert "contest_challenger_won" in reasons, \
+        "incumbent with NIS >> ceiling should have been ejected"
+
+
+def test_well_calibrated_incumbent_is_unaffected_by_nis_ceiling() -> None:
+    """A healthy incumbent (mean NIS ~2) must not be evicted by the NIS ceiling.
+
+    The ceiling is intentionally generous (100) and should only fire against states that are
+    clearly broken, not against any incumbent that is merely slightly off.
+    """
+    params = TrackParams(
+        confirm_m_of_n=(3, 5),
+        max_consecutive_rejections=3,
+        contest_window_frames=12,
+        incumbent_max_mean_nis=100.0,
+    )
+    track = Track(params)
+
+    # A well-estimated track following a real target.
+    for t, z, _ in _moving_measurements(10, 60.0, 0.3, seed=5):
+        track.update(z, DT, t, snr_aperture=80.0)
+    assert track.is_established
+
+    # A short burst of off-target detections opens a contest but should not eject the incumbent
+    # (the incumbent has mean NIS well below 100 for a brief perturbation).
+    reasons = []
+    for step in range(10, 16):
+        track.update((900.0, 900.0), DT, step * DT, snr_aperture=80.0)
+        reasons.append(track.status)
+    # The incumbent must still be producing output; a healthy state should survive.
+    assert track.is_established

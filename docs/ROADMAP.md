@@ -145,7 +145,7 @@ This is the scoring core. Spend the most care here.
       significance floor so it fails closed. Recovers scale to 0.4–10.7% across a 6× spot-size
       range, four resolutions, 10% salt-and-pepper, and a beacon at peak 45 — all inside the
       30% Tier-0/Tier-1 agreement band. See DESIGN §5.1.2.
-- [ ] `src/vision/spotscale.py` — **Tier 1**: scale-normalised LoG confirmation on the Tier-0
+- [x] `src/vision/spotscale.py` — **Tier 1**: scale-normalised LoG confirmation on the Tier-0
       ROI, parabola-fit refinement, curvature as the confidence measure. **Not top-hat** — see
       the DESIGN §5.1.2 measurement showing top-hat has no interior maximum over scale.
       Agreement uses a **±30% band on `rho = Tier1/Tier0`**. Cluster-membership gating was tried
@@ -441,11 +441,11 @@ simulation frames and evaluator video, and no mode argument reaches `src/vision/
 Last, deliberately. A headless system with great logs scores better on the 60% benchmark stages
 than a pretty GUI around a fragile tracker.
 
-- [ ] `src/gui/main_window.py` — PySide6 shell
-- [ ] `src/gui/viewport_widget.py` — live camera view with estimated/true centroid overlay
-- [ ] `src/gui/plots.py` — pyqtgraph live error and FPS strip charts
-- [ ] `src/gui/controls.py` — motion selector, noise selectors, atmospheric preset, parameter entry
-- [ ] `src/gui/mode_panel.py` — Mode A / Mode B switch, video file picker
+- [x] `src/gui/main_window.py` — PySide6 shell
+- [x] `src/gui/viewport_widget.py` — live camera view with estimated/true centroid overlay (implemented in `widgets.py`)
+- [x] `src/gui/plots.py` — pyqtgraph live error and FPS strip charts (implemented in `widgets.py`)
+- [x] `src/gui/controls.py` — motion selector, noise selectors, atmospheric preset, parameter entry
+- [x] `src/gui/mode_panel.py` — Mode A / Mode B switch, video file picker (implemented in `controls.py`)
 
 **Done when:** every mandatory function from the spec is visibly demonstrable in the GUI within
 a 10–15 minute demo.
@@ -489,15 +489,15 @@ finishing, not for discovering problems.
       one `git clean` away from being lost.
 - [ ] Test the frozen executable on a **clean machine with no Python installed** — procedure
       written up in `docs/PACKAGING.md`; **not yet executed**, needs a container or VM
-- [ ] Technical report (10–15 pages) — reuse `docs/DESIGN.md` as the backbone
-- [ ] User manual — installation, operation, parameter configuration, GUI description
+- [x] Technical report (10–15 pages) — reuse `docs/DESIGN.md` as the backbone
+- [x] User manual — installation, operation, parameter configuration, GUI description
 - [ ] 3–5 minute demo video (optional deliverable, worth doing)
 
 ---
 
 ## Optional / bonus (only after everything above)
 
-- [ ] Lightweight CNN spot validator via ONNX Runtime (the explicit "AI" component)
+- [x] Lightweight CNN spot validator via ONNX Runtime (the explicit "AI" component)
 - [ ] Multiple simultaneous targets + data association
 - [ ] IMM filter for maneuvering targets
 - [ ] Additional motion patterns (spiral, sinusoidal, user-defined)

@@ -1,0 +1,160 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Add `CustomTrajectory` class to `src/sim/trajectories.py`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253356
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160270616
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160747970
+      }
+    ],
+    "2. Wire `\"custom\"` into `build_trajectory()`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253573
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160789246
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160944086
+      }
+    ],
+    "3. Add `\"custom\"` config block to `config/default.json`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253642
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160278257
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160754206
+      }
+    ],
+    "4. Write pytest tests for `CustomTrajectory`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253692
+      },
+      {
+        "executionId": "c7d8f359-723c-423f-b457-cdeb4191126e",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790161304072
+      }
+    ],
+    "5. Add `flux_ratio_threshold` field to `AiConfig` in `src/config.py`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253787
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160286173
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160760190
+      }
+    ],
+    "6. Implement `\"multi_candidate\"` guard in `CandidateDiscriminator.should_run()`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253880
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160799840
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160951881
+      }
+    ],
+    "7. Add size-diverse training specs to `scripts/train_ai.py`": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160253977
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160293778
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160769035
+      }
+    ],
+    "8. Update `config/default.json` AI block with safe defaults": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160254076
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160809409
+      },
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160962047
+      }
+    ],
+    "9. Retrain the ONNX model": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160254172
+      },
+      {
+        "executionId": "c7d8f359-723c-423f-b457-cdeb4191126e",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790161312531
+      }
+    ],
+    "10. Write pytest tests for the AI discriminator": [
+      {
+        "executionId": "29fa1838-27cf-4b25-8085-04074ea4ab97",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790160254261
+      },
+      {
+        "executionId": "c7d8f359-723c-423f-b457-cdeb4191126e",
+        "chatSessionId": "sess_9f807be0-7bb2-4e51-9812-e743f9484c7c",
+        "timestamp": 1790161324428
+      }
+    ]
+  }
+}

@@ -41,6 +41,7 @@ __all__ = [
     "SpiralTrajectory",
     "SinusoidalTrajectory",
     "OrnsteinUhlenbeckTrajectory",
+    "CustomTrajectory",
     "apply_boundary",
     "build_trajectory",
     "MANDATORY_MOTIONS",
@@ -527,6 +528,64 @@ class OrnsteinUhlenbeckTrajectory(Trajectory):
         self._x, self._y = self.constrain(self._x0, self._y0)
 
 
+class CustomTrajectory(AnalyticTrajectory):
+    """User-defined motion: linear drift with independent sinusoidal oscillation on each axis (optional).
+
+    ``x(t) = x0 + vx*t + Ax*sin(2*pi*fx*t)``
+    ``y(t) = y0 + vy*t + Ay*sin(2*pi*fy*t)``
+
+    This combines a constant-velocity component with a periodic cross-track oscillation,
+    producing a zigzag path that exercises the tracker differently from the purely periodic
+    (circular, figure-of-8) and purely stochastic (random, OU) mandatory motions. The
+    independent per-axis frequencies allow asymmetric Lissajous-like patterns when
+    ``frequency_x_hz != frequency_y_hz``.
+
+    Parameters are configurable via ``config/default.json`` under ``target.motion.custom``,
+    following the same pattern as every other trajectory type.
+    """
+
+    def __init__(self, x0: float, y0: float,
+                 velocity_x_px_s: float, velocity_y_px_s: float,
+                 amplitude_x_px: float, amplitude_y_px: float,
+                 frequency_x_hz: float, frequency_y_hz: float,
+                 **kwargs) -> None:
+        """Initialise custom drift-plus-oscillation motion.
+
+        Args:
+            x0: Initial x position in canvas coordinates.
+            y0: Initial y position in canvas coordinates.
+            velocity_x_px_s: Horizontal drift velocity in pixels per second.
+            velocity_y_px_s: Vertical drift velocity in pixels per second.
+            amplitude_x_px: Horizontal oscillation amplitude in pixels.
+            amplitude_y_px: Vertical oscillation amplitude in pixels.
+            frequency_x_hz: Horizontal oscillation frequency in Hz.
+            frequency_y_hz: Vertical oscillation frequency in Hz.
+            **kwargs: Boundary options forwarded to :class:`Trajectory`.
+        """
+        super().__init__(**kwargs)
+        self.x0 = x0
+        self.y0 = y0
+        self.vx = velocity_x_px_s
+        self.vy = velocity_y_px_s
+        self.amplitude_x = amplitude_x_px
+        self.amplitude_y = amplitude_y_px
+        self.frequency_x = frequency_x_hz
+        self.frequency_y = frequency_y_hz
+
+    def _evaluate(self, t: float) -> Tuple[float, float]:
+        """Return the unconstrained position at time ``t``.
+
+        Args:
+            t: Elapsed time in seconds.
+
+        Returns:
+            The raw position as ``(x, y)``, before boundary handling.
+        """
+        x = self.x0 + self.vx * t + self.amplitude_x * math.sin(2.0 * math.pi * self.frequency_x * t)
+        y = self.y0 + self.vy * t + self.amplitude_y * math.sin(2.0 * math.pi * self.frequency_y * t)
+        return x, y
+
+
 #: Registry of motion type name to implementing class.
 _REGISTRY: Dict[str, Type[Trajectory]] = {
     "linear": LinearTrajectory,
@@ -536,6 +595,7 @@ _REGISTRY: Dict[str, Type[Trajectory]] = {
     "spiral": SpiralTrajectory,
     "sinusoidal": SinusoidalTrajectory,
     "ornstein_uhlenbeck": OrnsteinUhlenbeckTrajectory,
+    "custom": CustomTrajectory,
 }
 
 
@@ -614,6 +674,9 @@ def build_trajectory(config: AppConfig,
     elif motion_type == "figure8":
         params.setdefault("center_x", (config.scene.width - 1) / 2.0)
         params.setdefault("center_y", (config.scene.height - 1) / 2.0)
+    elif motion_type == "custom":
+        params.setdefault("x0", x0)
+        params.setdefault("y0", y0)
 
     cls = _REGISTRY[motion_type]
     try:

@@ -373,6 +373,12 @@ class TrackingRunner:
             camera_pan_deg=frame_data.camera_pan_deg,
             camera_tilt_deg=frame_data.camera_tilt_deg,
             slew_saturated=slew_saturated)
+        if frame_data.extra_ground_truths:
+            import json as _json
+            record.extra_targets = _json.dumps([
+                {"x": gt.x, "y": gt.y, "visible": gt.visible}
+                for gt in frame_data.extra_ground_truths
+            ])
         self.logger.add(record)
         self.frames += 1
 

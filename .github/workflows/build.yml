@@ -1,0 +1,145 @@
+name: Build standalone executables
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on version tags: git tag v1.0 && git push --tags
+  workflow_dispatch:  # also allows manual trigger from the GitHub Actions tab
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artifact_name: fsoc-tracker-linux
+            binary_path: dist/fsoc-tracker
+            ffmpeg_install: sudo apt-get install -y ffmpeg
+
+          - os: windows-latest
+            artifact_name: fsoc-tracker-windows
+            binary_path: dist/fsoc-tracker.exe
+            ffmpeg_install: choco install ffmpeg --no-progress -y
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install ffmpeg (needed for test fixture generation)
+        run: ${{ matrix.ffmpeg_install }}
+        shell: bash
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build executable
+        env:
+          BUNDLE_NUMBA: "0"
+          BUILD_GUI: "0"
+          # Point to the venv python; on Windows pip installs into the runner python directly
+          PYTHON: python
+        run: python -m PyInstaller --noconfirm --log-level=WARN fsoc-tracker.spec
+        shell: bash
+
+      - name: Self-test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./dist/fsoc-tracker --selftest
+          echo "Linux self-test passed"
+
+      - name: Self-test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dist\fsoc-tracker.exe --selftest
+          echo "Windows self-test passed"
+        shell: cmd
+
+      - name: Generate Mode B probe fixture
+        run: |
+          python -c "
+          from pathlib import Path
+          from scenarios.generate import VideoSpec, generate_video
+          generate_video(VideoSpec('clean_probe', width=640, height=480, frames=60,
+                                   gaussian_sigma=8.0), Path('dist'))
+          "
+        shell: bash
+
+      - name: Upload executable and fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.binary_path }}
+            dist/clean_probe.mp4
+            dist/clean_probe_truth.csv
+          retention-days: 30
+
+  # Creates a GitHub Release with both artifacts attached when triggered by a tag
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fsoc-tracker-linux
+          path: release/linux
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fsoc-tracker-windows
+          path: release/windows
+
+      - name: Make Linux binary executable
+        run: chmod +x release/linux/fsoc-tracker
+
+      - name: Create release archives
+        run: |
+          cd release
+          zip -j fsoc-tracker-linux.zip linux/fsoc-tracker linux/clean_probe.mp4 linux/clean_probe_truth.csv
+          zip -j fsoc-tracker-windows.zip windows/fsoc-tracker.exe windows/clean_probe.mp4 windows/clean_probe_truth.csv
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/fsoc-tracker-linux.zip
+            release/fsoc-tracker-windows.zip
+          body: |
+            ## FSOC Tracker — Standalone Executables
+
+            Two self-contained builds, no Python required on the target machine.
+
+            ### Linux (Ubuntu 24.04+, glibc ≥ 2.38)
+            1. Download `fsoc-tracker-linux.zip` and extract
+            2. `sudo apt-get install -y libxcb1 libgl1 libglib2.0-0`  ← one-time, minimal machines only
+            3. `./fsoc-tracker --selftest`
+            4. `./fsoc-tracker --headless --duration 60`
+
+            ### Windows (10/11, x64)
+            1. Download `fsoc-tracker-windows.zip` and extract
+            2. `fsoc-tracker.exe --selftest`
+            3. `fsoc-tracker.exe --headless --duration 60`
+
+            ### Mode B (evaluator video)
+            ```bash
+            # Linux
+            echo '{"run":{"mode":"video"},"video_input":{"path":"clean_probe.mp4","ground_truth_path":"clean_probe_truth.csv"},"ai":{"enabled":false}}' > sc.json
+            ./fsoc-tracker --scenario sc.json --headless
+
+            # Windows
+            fsoc-tracker.exe --scenario sc.json --headless
+            ```

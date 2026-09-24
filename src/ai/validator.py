@@ -60,10 +60,12 @@ class CandidateDiscriminator:
         confidence_threshold: Minimum score for the network's pick to displace the classical one.
         max_inference_ms: Per-frame budget; exceeding it disables the discriminator for the rest
             of the run rather than silently eroding the FPS requirement.
+        flux_ratio_threshold: Maximum flux ratio between the top two candidates below which the
+            discriminator is invoked. Only used when ``invoke_on="multi_candidate"``.
     """
 
     def __init__(self, session, invoke_on: str, confidence_threshold: float,
-                 max_inference_ms: float) -> None:
+                 max_inference_ms: float, flux_ratio_threshold: float = 1.5) -> None:
         """Initialise the discriminator.
 
         Args:
@@ -71,11 +73,13 @@ class CandidateDiscriminator:
             invoke_on: When to run. See :attr:`invoke_on`.
             confidence_threshold: Minimum accepted confidence.
             max_inference_ms: Per-frame inference budget in milliseconds.
+            flux_ratio_threshold: See :attr:`flux_ratio_threshold`.
         """
         self.session = session
         self.invoke_on = invoke_on
         self.confidence_threshold = float(confidence_threshold)
         self.max_inference_ms = float(max_inference_ms)
+        self.flux_ratio_threshold = float(flux_ratio_threshold)
         self._input_name = session.get_inputs()[0].name
         self._disabled = False
         self.last_inference_ms = 0.0
@@ -105,8 +109,16 @@ class CandidateDiscriminator:
         is nothing to second-guess; with several, the ranking is a guess that can be wrong. This
         keeps the cost off the common case without introducing a tuned ambiguity margin.
 
+        Under ``multi_candidate`` the discriminator runs only when there are at least two
+        candidates **and** the flux ratio of the top two candidates is at or below
+        ``flux_ratio_threshold``. When the top candidate massively outranks all others by flux,
+        classical ranking is already reliable; the discriminator is only needed when the choice
+        is genuinely ambiguous. This prevents the network from overriding a correct classical
+        ranking, which was the failure mode on ``fhd_1920_bigspot`` (96.6% association failure
+        when the discriminator overrode a reliable flux-ranked answer).
+
         Args:
-            detections: Surviving candidates, flux-ranked.
+            detections: Surviving candidates, flux-ranked (strongest first).
 
         Returns:
             Whether :meth:`rank` should be called.
@@ -115,6 +127,15 @@ class CandidateDiscriminator:
             return False
         if self.invoke_on == "always":
             return bool(detections)
+        if self.invoke_on == "multi_candidate":
+            if len(detections) < 2:
+                return False
+            second_flux = detections[1].flux
+            if second_flux <= 0:
+                return False
+            ratio = detections[0].flux / second_flux
+            return ratio <= self.flux_ratio_threshold
+        # "classical_failure" (default)
         return len(detections) >= 2
 
     def rank(self, frame: np.ndarray,
@@ -207,4 +228,5 @@ def load_discriminator(ai_config) -> Optional[CandidateDiscriminator]:
                        ai_config.model_path, error)
         return None
     return CandidateDiscriminator(session, ai_config.invoke_on,
-                                  ai_config.confidence_threshold, ai_config.max_inference_ms)
+                                  ai_config.confidence_threshold, ai_config.max_inference_ms,
+                                  ai_config.flux_ratio_threshold)

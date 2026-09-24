@@ -12,16 +12,14 @@ Walked against the 25-row table in ``docs/PROBLEM_STATEMENT.md``:
 Parameter     Control                    Note
 ============  =========================  =================================================
 1  screen     Scene width/height         2000x2000 minimum enforced by ``src.config``
-2  camera     Monochrome (display only)  Colour is an *optional* extra we do not implement;
-                                         Mode B colour input is converted at the source
-                                         boundary, so the pipeline is colour-tolerant on input
+2  camera     Monochrome (display only)  Colour display available in Mode B via colour_display
+                                         toggle; the vision pipeline always receives grayscale
 3  resolution Camera width/height
 4  FOV        FOV horizontal/vertical
 5  rate       Camera update rate         >= 30 Hz enforced by ``src.config``
 6  initial    Camera initial position    centre / random / custom
 7  type       Beacon spot (fixed)        The specification fixes this; nothing to select
-8  targets    Target count               1 mandatory; >1 is optional and not implemented,
-                                         so the control is present but limited to 1
+8  targets    Target count               1 mandatory; >1 now implemented (up to 4)
 9  shape      Target shape               gaussian / square / circle
 10 size       Target size                5-20 px enforced by ``src.config``
 11 location   Target initial position    random / centre / custom
@@ -39,8 +37,9 @@ Parameter     Control                    Note
 
 Two rows are deliberately not adjustable, and both are stated in the User Manual rather than
 left for a demonstrator to discover: **parameter 2** (colour camera) and **parameter 8** (more
-than one target) are marked *optional* by the specification and are not implemented, so offering
-a control that silently did nothing would be worse than not offering one.
+than one target) were previously marked *optional* by the specification and not implemented;
+both are now implemented — parameter 8 supports up to 4 simultaneous targets and parameter 2
+exposes a ``colour_display`` toggle in Mode B.
 """
 
 from __future__ import annotations
@@ -97,11 +96,11 @@ class ControlPanel(QWidget):
         target = self.config.target
 
         self.target_count = QSpinBox()
-        self.target_count.setRange(1, 1)          # >1 target is optional and not implemented
+        self.target_count.setRange(1, 4)          # up to 4 simultaneous targets (optional bonus)
         self.target_count.setValue(1)
         self.target_count.setToolTip(
-            "Parameter 8. One target is mandatory; multiple targets are optional in the spec "
-            "and are not implemented.")
+            "Parameter 8. One target is mandatory; up to 4 simultaneous targets are supported "
+            "as an optional bonus feature.")
         form.addRow("count (8)", self.target_count)
 
         self.target_shape = QComboBox()
@@ -142,7 +141,7 @@ class ControlPanel(QWidget):
         form.addRow("scene width (1)", self.scene_w)
         form.addRow("scene height (1)", self.scene_h)
 
-        form.addRow("camera type (2)", QLabel("monochrome FPA (colour not implemented)"))
+        form.addRow("camera type (2)", QLabel("monochrome FPA (colour display available in Mode B)"))
 
         self.res_w = self._spin(camera.resolution_width, 160, 2000, 10)
         self.res_h = self._spin(camera.resolution_height, 120, 2000, 10)
@@ -258,6 +257,13 @@ class ControlPanel(QWidget):
         truth_picker.addWidget(browse_truth)
         form.addRow("ground truth CSV", truth_picker)
 
+        self.colour_display_check = QCheckBox("colour display (Mode B)")
+        self.colour_display_check.setChecked(self.config.video_input.colour_display)
+        self.colour_display_check.setToolTip(
+            "When enabled, the GUI displays colour video frames in Mode B. "
+            "The vision pipeline always receives grayscale; this only affects what you see.")
+        form.addRow(self.colour_display_check)
+
         layout.addLayout(form)
         layout.addWidget(QLabel(
             "Mode B bypasses the virtual PTZ camera: the video is the scene, so pan/tilt is\\n"
@@ -335,5 +341,6 @@ class ControlPanel(QWidget):
             "video_input": {
                 "path": self.video_path.text().strip() or None,
                 "ground_truth_path": self.truth_path.text().strip() or None,
+                "colour_display": self.colour_display_check.isChecked(),
             },
         }

@@ -36,7 +36,7 @@ from src.noise.sensor import (
 )
 from src.sim.beacon import BeaconParams, render_beacon
 
-__all__ = ["VideoSpec", "generate_video", "DEFAULT_SPECS"]
+__all__ = ["VideoSpec", "generate_video", "DEFAULT_SPECS", "SIZE_SWEEP_SPECS"]
 
 
 @dataclass(frozen=True)
@@ -253,4 +253,14 @@ DEFAULT_SPECS: Tuple[VideoSpec, ...] = (
               gaussian_sigma=16.0, sp_density=0.08, bitrate_kbps=1200),
     VideoSpec("square_bright", width=720, height=576, shape="square", size_px=12.0,
               peak=250.0, background=40.0, gaussian_sigma=5.0, motion="linear"),
+)
+
+#: Controlled 1920x1080 H.264 size sweep used to validate the Phase-B association fix.
+#: Every property except spot size/sigma is held fixed, so a change in association behaviour
+#: cannot be attributed to brightness, compression, trajectory, or frame geometry.
+SIZE_SWEEP_SPECS: Tuple[VideoSpec, ...] = tuple(
+    VideoSpec(f"sz{size}", width=1920, height=1080, frames=120, peak=240.0,
+              background=60.0, gaussian_sigma=6.0, bitrate_kbps=4000,
+              motion="figure8", size_px=float(size), sigma_px=float(size) / 2.355)
+    for size in (5, 10, 15, 20)
 )

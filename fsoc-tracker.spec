@@ -114,6 +114,19 @@ else:
 if not BUNDLE_NUMBA:
     excludes += ["numba", "llvmlite"]
 
+# The ONNX candidate discriminator — must be added BEFORE Analysis() so PyInstaller
+# includes them in the bundle. onnxruntime ships native libraries and the model is a
+# data file; neither is found by following imports. Bundled unconditionally (15 KB).
+try:
+    binaries += collect_dynamic_libs("onnxruntime")
+    datas += collect_data_files("onnxruntime")
+    hiddenimports += ["onnxruntime", "onnxruntime.capi", "onnxruntime.capi._pybind_state"]
+except Exception:
+    pass
+_model = os.path.join(os.getcwd(), "models", "discriminator.onnx")
+if os.path.exists(_model):
+    datas += [(_model, "models")]
+
 a = Analysis(
     ["src/main.py"],
     pathex=[str(Path(".").resolve())],
@@ -133,21 +146,6 @@ if BUILD_GUI:
     # filtered after analysis, not only from the explicit binaries list above.
     a.binaries = [e for e in a.binaries if "cv2/qt" not in e[0].replace("\\", "/")]
     a.datas = [e for e in a.datas if "cv2/qt" not in e[0].replace("\\", "/")]
-
-# The ONNX candidate discriminator. onnxruntime ships native libraries and the model is a data
-# file, so both need collecting explicitly; PyInstaller finds neither by following imports. The
-# model is bundled unconditionally rather than behind a flag -- it is 15 KB, and a GUI build that
-# silently lacked it would fall back to the classical path with no visible sign.
-try:
-    binaries += collect_dynamic_libs("onnxruntime")
-    datas += collect_data_files("onnxruntime")
-    hiddenimports += ["onnxruntime", "onnxruntime.capi", "onnxruntime.capi._pybind_state"]
-except Exception:
-    pass
-
-_model = os.path.join(os.getcwd(), "models", "discriminator.onnx")
-if os.path.exists(_model):
-    datas += [(_model, "models")]
 
 pyz = PYZ(a.pure)
 

@@ -211,7 +211,7 @@ Stated honestly rather than implying general portability:
 | Build host (Ubuntu 24.04, glibc 2.39), source run | **verified** |
 | Build host, frozen run from an unrelated working directory | **verified** — this caught the bundled-config bug |
 | Build host, frozen Mode B video decode | **verified** — 150-frame file, identical results to source |
-| `ubuntu:24.04` container, no Python | **not yet run** |
+| `ubuntu:24.04` container, no Python | **verified** 2026-09-24 — self-test PASS, Mode B 61 frames, 174 FPS. Requires `libxcb1 libgl1 libglib2.0-0` (runtime X11/GL stubs). |
 | `debian:12` container, no Python | **not yet run** — predicted to fail on glibc, see above |
 | Windows, macOS | **not attempted.** The spec is platform-neutral but nothing has been built or run there. |
 
