@@ -292,7 +292,7 @@ def launch_gui(args: argparse.Namespace) -> int:
 
     config_path = args.config or default_config_path()
     try:
-        config = apply_overrides(load_config(config_path, args.scenario), args)
+        config = apply_overrides(_load_config_bundle_aware(config_path, args.scenario), args)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
@@ -382,6 +382,59 @@ def default_config_path() -> str:
         The bundled configuration when running frozen, otherwise the source-tree relative path.
     """
     return bundled_resource("config/default.json") or "config/default.json"
+
+
+def _resolve_bundle_paths(raw: dict) -> dict:
+    """Rewrite relative paths in a raw config dict to their bundle-absolute equivalents.
+
+    When frozen, data files live inside ``sys._MEIPASS``, not the working directory.
+    This patches known relative-path fields before validation, so the executable works
+    from any working directory without the user needing to ``cd`` anywhere.
+
+    Args:
+        raw: The parsed configuration document.
+
+    Returns:
+        A shallow copy of ``raw`` with resolved absolute paths where applicable.
+    """
+    if getattr(sys, "_MEIPASS", None) is None:
+        return raw  # not frozen -- nothing to patch
+
+    raw = dict(raw)  # never mutate the caller's dict
+
+    ai = raw.get("ai")
+    if isinstance(ai, dict) and ai.get("enabled") and ai.get("model_path"):
+        resolved = bundled_resource(str(ai["model_path"]))
+        if resolved:
+            raw["ai"] = dict(ai, model_path=resolved)
+
+    return raw
+
+
+def _load_config_bundle_aware(path: str,
+                               overrides=None) -> "AppConfig":
+    """Load config and patch bundle paths before validation.
+
+    Wraps :func:`load_config` with :func:`_resolve_bundle_paths` so every entry
+    point (GUI, headless, --check-config) gets bundle-aware path resolution without
+    duplicating the logic.
+
+    Args:
+        path: Base config file path.
+        overrides: Optional list of scenario override paths.
+
+    Returns:
+        Validated :class:`~src.config.AppConfig`.
+    """
+    import json as _json
+    raw = _json.loads(open(path, encoding="utf-8").read())
+    from src.config import merge_overrides, load_json_document, AppConfig as _AC
+    applied = []
+    for op in (overrides or []):
+        raw = merge_overrides(raw, load_json_document(op))
+        applied.append(str(op))
+    raw = _resolve_bundle_paths(raw)
+    return _AC.from_dict(raw, source_path=path, override_paths=applied)
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -477,7 +530,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return launch_gui(args)
     try:
         config = apply_overrides(
-            load_config(args.config or default_config_path(), args.scenario), args)
+            _load_config_bundle_aware(args.config or default_config_path(), args.scenario), args)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
