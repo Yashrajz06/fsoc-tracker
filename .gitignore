@@ -30,3 +30,6 @@ build/train_clips/
 models/*.npz
 models/*.ckpt
 !models/discriminator.onnx
+
+# SQLite session file created by some editors/tools (colon prefix is invalid on Windows)
+:memory:.ses
