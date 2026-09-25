@@ -99,6 +99,10 @@ class MainWindow(QMainWindow):
         """
         raw = load_json_document(self.config_path)
         merged = merge_overrides(raw, self.controls.overrides())
+        # Resolve bundle-relative paths (e.g. models/discriminator.onnx) before
+        # validation so the GUI works from any working directory when frozen.
+        from src.main import _resolve_bundle_paths
+        merged = _resolve_bundle_paths(merged)
         return AppConfig.from_dict(merged, source_path=self.config_path)
 
     def start_run(self) -> None:
