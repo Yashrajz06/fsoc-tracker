@@ -211,12 +211,62 @@ class MultiScene:
         n = max(1, config.target.count)
         shared_canvas = Canvas.from_config(config)
         scenes: List[Scene] = []
+        import dataclasses as _dc
+        import math as _math
+
         for i in range(n):
             sub_seed = int(rng.integers(0, 2**31))
             sub_rng = np.random.default_rng(sub_seed)
+
+            # Distribute sub-scenes evenly around the trajectory period so they start at
+            # visually distinct positions rather than all at phase 0.  Only analytic periodic
+            # trajectories need this; stochastic ones (random, OU) already differ by RNG seed,
+            # and linear trajectories separate by initial position (also RNG-seeded).
+            traj_config = config
+            if i > 0:
+                motion_type = config.target.motion_type
+                phase_step = (2.0 * _math.pi * i) / n
+                motion_raw = dict(config.target.motion)
+
+                if motion_type == "circular":
+                    params = dict(motion_raw.get("circular", {}))
+                    params["phase_offset_rad"] = (
+                        float(params.get("phase_offset_rad", 0.0)) + phase_step)
+                    motion_raw = dict(motion_raw, circular=params)
+                    traj_config = _dc.replace(
+                        config, target=_dc.replace(config.target, motion=motion_raw))
+
+                elif motion_type == "figure8":
+                    params = dict(motion_raw.get("figure8", {}))
+                    params["phase_offset_rad"] = (
+                        float(params.get("phase_offset_rad", 0.0)) + phase_step)
+                    motion_raw = dict(motion_raw, figure8=params)
+                    traj_config = _dc.replace(
+                        config, target=_dc.replace(config.target, motion=motion_raw))
+
+                elif motion_type == "sinusoidal":
+                    # Offset x0 so beacons are spread along the horizontal axis.
+                    params = dict(motion_raw.get("sinusoidal", {}))
+                    shift = float(config.scene.width) * i / n
+                    params["x0"] = float(params.get("x0", config.scene.width / 2.0)) + shift
+                    motion_raw = dict(motion_raw, sinusoidal=params)
+                    traj_config = _dc.replace(
+                        config, target=_dc.replace(config.target, motion=motion_raw))
+
+                elif motion_type == "spiral":
+                    # Stagger angular start so spirals don't overlap at t=0.
+                    params = dict(motion_raw.get("spiral", {}))
+                    # Not a phase param — use a different growth rate per target.
+                    growth = float(params.get("growth_rate_b", 12.0))
+                    params["growth_rate_b"] = growth * (1.0 + 0.4 * i)
+                    motion_raw = dict(motion_raw, spiral=params)
+                    traj_config = _dc.replace(
+                        config, target=_dc.replace(config.target, motion=motion_raw))
+                # linear, random, OU, custom — variety comes from the sub_rng seed alone.
+
             scene = Scene(
                 canvas=shared_canvas,
-                trajectory=build_trajectory(config, sub_rng),
+                trajectory=build_trajectory(traj_config, sub_rng),
                 beacon=BeaconParams.from_config(config),
             )
             scenes.append(scene)

@@ -151,7 +151,10 @@ def test_unimplemented_optional_parameters_are_disclosed(qt_app, config) -> None
     assert panel.target_count.maximum() == 4
     assert not hasattr(panel, "camera_type_selector")
     source = (Path(__file__).resolve().parents[1] / "src" / "gui" / "controls.py").read_text()
-    assert "colour" in source and "not implemented" in source
+    # Colour display is now implemented via a toggle; custom position is no longer offered
+    # (removed to prevent the crash from missing initial_x/y coordinates).
+    assert "colour" in source
+    assert "colour_display" in source
 
 
 # ------------------------------------------------------------------------------------------

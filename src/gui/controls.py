@@ -17,12 +17,12 @@ Parameter     Control                    Note
 3  resolution Camera width/height
 4  FOV        FOV horizontal/vertical
 5  rate       Camera update rate         >= 30 Hz enforced by ``src.config``
-6  initial    Camera initial position    centre / random / custom
+6  initial    Camera initial position    centre / random
 7  type       Beacon spot (fixed)        The specification fixes this; nothing to select
 8  targets    Target count               1 mandatory; >1 now implemented (up to 4)
 9  shape      Target shape               gaussian / square / circle
 10 size       Target size                5-20 px enforced by ``src.config``
-11 location   Target initial position    random / centre / custom
+11 location   Target initial position    random / centre
 12 motion     Motion type                all four mandatory plus three optional
 13 pan speed  Max pan speed              5-10 deg/s enforced by ``src.config``
 14 tilt speed Max tilt speed             5-10 deg/s enforced
@@ -34,20 +34,14 @@ Parameter     Control                    Note
 24 atmosphere Atmospheric preset         clear / haze / fog / rain / low light
 25 platform   Platform motion type+rate  linear mandatory, four optional types
 ============  =========================  =================================================
-
-Two rows are deliberately not adjustable, and both are stated in the User Manual rather than
-left for a demonstrator to discover: **parameter 2** (colour camera) and **parameter 8** (more
-than one target) were previously marked *optional* by the specification and not implemented;
-both are now implemented — parameter 8 supports up to 4 simultaneous targets and parameter 2
-exposes a ``colour_display`` toggle in Mode B.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -90,38 +84,47 @@ class ControlPanel(QWidget):
         return box
 
     def _build_target_tab(self) -> QWidget:
-        """Parameters 8-12: target count, shape, size, initial location and motion."""
+        """Target count, shape, size, initial location and motion."""
         widget = QWidget()
         form = QFormLayout(widget)
         target = self.config.target
 
         self.target_count = QSpinBox()
-        self.target_count.setRange(1, 4)          # up to 4 simultaneous targets (optional bonus)
-        self.target_count.setValue(1)
+        self.target_count.setRange(1, 4)
+        self.target_count.setValue(target.count)
         self.target_count.setToolTip(
-            "Parameter 8. One target is mandatory; up to 4 simultaneous targets are supported "
+            "One target is mandatory; up to 4 simultaneous targets are supported "
             "as an optional bonus feature.")
-        form.addRow("count (8)", self.target_count)
+        form.addRow("targets  [1–4]", self.target_count)
 
         self.target_shape = QComboBox()
         self.target_shape.addItems(["gaussian", "square", "circle"])
         self.target_shape.setCurrentText(target.shape)
-        form.addRow("shape (9)", self.target_shape)
+        form.addRow("shape", self.target_shape)
 
         self.target_size = self._spin(float(target.size_px), 5, 20)
-        form.addRow("size px (10)", self.target_size)
+        form.addRow("size  [5–20 px]", self.target_size)
 
         self.target_position = QComboBox()
-        self.target_position.addItems(["random", "center", "custom"])
-        self.target_position.setCurrentText(target.initial_position)
-        form.addRow("initial location (11)", self.target_position)
+        # "custom" removed — requires initial_x/initial_y which the GUI does not expose.
+        # Use a scenario JSON override to set a custom position.
+        self.target_position.addItems(["random", "center"])
+        pos = target.initial_position if target.initial_position in ("random", "center") else "random"
+        self.target_position.setCurrentText(pos)
+        self.target_position.setToolTip(
+            "random: beacon spawns at a random canvas position.\n"
+            "center: beacon spawns at the centre of the canvas.\n"
+            "For a fixed custom position use a scenario JSON override.")
+        form.addRow("initial location", self.target_position)
 
         self.motion = QComboBox()
         self.motion.addItems(["linear", "circular", "figure8", "random",
-                              "spiral", "sinusoidal", "ornstein_uhlenbeck"])
+                              "spiral", "sinusoidal", "ornstein_uhlenbeck", "custom"])
         self.motion.setCurrentText(target.motion_type)
-        self.motion.setToolTip("Parameter 12. First four are mandatory; the rest are optional.")
-        form.addRow("motion (12)", self.motion)
+        self.motion.setToolTip(
+            "Mandatory: linear, circular, figure8, random.\n"
+            "Optional: spiral, sinusoidal, ornstein_uhlenbeck, custom.")
+        form.addRow("motion type", self.motion)
 
         self.boundary = QComboBox()
         self.boundary.addItems(["bounce", "wrap", "clamp"])
@@ -130,7 +133,7 @@ class ControlPanel(QWidget):
         return widget
 
     def _build_camera_tab(self) -> QWidget:
-        """Parameters 1-6 and 13-15: scene, camera, FOV, rates and slew limits."""
+        """Scene size, camera resolution, FOV, rates and slew limits."""
         widget = QWidget()
         form = QFormLayout(widget)
         camera = self.config.camera
@@ -138,40 +141,42 @@ class ControlPanel(QWidget):
 
         self.scene_w = self._spin(scene.width, 2000, 8000, 100)
         self.scene_h = self._spin(scene.height, 2000, 8000, 100)
-        form.addRow("scene width (1)", self.scene_w)
-        form.addRow("scene height (1)", self.scene_h)
+        form.addRow("scene width  [min 2000]", self.scene_w)
+        form.addRow("scene height  [min 2000]", self.scene_h)
 
-        form.addRow("camera type (2)", QLabel("monochrome FPA (colour display available in Mode B)"))
+        form.addRow("camera type", QLabel("monochrome FPA  (colour display available in Mode B)"))
 
         self.res_w = self._spin(camera.resolution_width, 160, 2000, 10)
         self.res_h = self._spin(camera.resolution_height, 120, 2000, 10)
-        form.addRow("resolution width (3)", self.res_w)
-        form.addRow("resolution height (3)", self.res_h)
+        form.addRow("resolution width", self.res_w)
+        form.addRow("resolution height", self.res_h)
 
         self.fov_h = self._spin(camera.fov_horizontal_deg, 0.5, 30.0, 0.5, 2)
         self.fov_v = self._spin(camera.fov_vertical_deg, 0.5, 30.0, 0.5, 2)
-        form.addRow("FOV horizontal deg (4)", self.fov_h)
-        form.addRow("FOV vertical deg (4)", self.fov_v)
+        form.addRow("FOV horizontal (deg)", self.fov_h)
+        form.addRow("FOV vertical (deg)", self.fov_v)
 
         self.camera_rate = self._spin(camera.update_rate_hz, 30, 120, 5)
-        form.addRow("camera rate Hz (5)", self.camera_rate)
+        form.addRow("camera rate  [min 30 Hz]", self.camera_rate)
 
         self.camera_position = QComboBox()
-        self.camera_position.addItems(["center", "random", "custom"])
-        self.camera_position.setCurrentText(camera.initial_position)
-        form.addRow("initial position (6)", self.camera_position)
+        # "custom" removed — requires initial_pan_px/initial_tilt_px not exposed in the GUI.
+        self.camera_position.addItems(["center", "random"])
+        cam_pos = camera.initial_position if camera.initial_position in ("center", "random") else "center"
+        self.camera_position.setCurrentText(cam_pos)
+        form.addRow("initial position", self.camera_position)
 
         self.pan_speed = self._spin(camera.max_pan_speed_deg_s, 5.0, 10.0, 0.5, 1)
         self.tilt_speed = self._spin(camera.max_tilt_speed_deg_s, 5.0, 10.0, 0.5, 1)
-        form.addRow("max pan deg/s (13)", self.pan_speed)
-        form.addRow("max tilt deg/s (14)", self.tilt_speed)
+        form.addRow("max pan speed  [5–10 °/s]", self.pan_speed)
+        form.addRow("max tilt speed  [5–10 °/s]", self.tilt_speed)
 
         self.control_rate = self._spin(self.config.control.update_rate_hz, 20, 120, 5)
-        form.addRow("control rate Hz (15)", self.control_rate)
+        form.addRow("control rate  [min 20 Hz]", self.control_rate)
         return widget
 
     def _build_noise_tab(self) -> QWidget:
-        """Parameters 21-25: sensor noise, atmosphere, jitter and platform motion."""
+        """Sensor noise, atmosphere, jitter and platform motion."""
         widget = QWidget()
         form = QFormLayout(widget)
         noise = self.config.noise
@@ -180,17 +185,17 @@ class ControlPanel(QWidget):
         self.noise_enabled.setChecked(noise.enabled)
         form.addRow(self.noise_enabled)
 
-        self.gaussian_on = QCheckBox("Gaussian (21)")
+        self.gaussian_on = QCheckBox("Gaussian noise")
         self.gaussian_on.setChecked(bool(noise.gaussian.get("enabled", True)))
         self.gaussian_sigma = self._spin(float(noise.gaussian.get("sigma", 10.0)), 0, 20, 1, 1)
         form.addRow(self.gaussian_on, self.gaussian_sigma)
-        form.addRow(QLabel("  sigma <= 20 (22)"))
+        form.addRow(QLabel("  sigma  [max 20]"))
 
-        self.poisson_on = QCheckBox("Poisson (21)")
+        self.poisson_on = QCheckBox("Poisson noise")
         self.poisson_on.setChecked(bool(noise.poisson.get("enabled", False)))
         form.addRow(self.poisson_on)
 
-        self.sp_on = QCheckBox("salt && pepper (21)")
+        self.sp_on = QCheckBox("salt && pepper")
         self.sp_on.setChecked(bool(noise.salt_pepper.get("enabled", False)))
         self.sp_density = self._spin(float(noise.salt_pepper.get("density", 0.05)), 0, 0.10,
                                      0.01, 3)
@@ -199,15 +204,16 @@ class ControlPanel(QWidget):
         self.atmosphere = QComboBox()
         self.atmosphere.addItems(["clear", "haze", "fog", "rain", "low_light"])
         self.atmosphere.setCurrentText(str(noise.atmospheric.get("preset", "clear")))
-        form.addRow("atmosphere (24)", self.atmosphere)
+        form.addRow("atmosphere preset", self.atmosphere)
 
-        self.jitter_on = QCheckBox("camera jitter (23)")
+        self.jitter_on = QCheckBox("camera jitter")
         self.jitter_on.setChecked(bool(noise.camera_jitter.get("enabled", True)))
         self.jitter_px = self._spin(float(noise.camera_jitter.get("max_px_per_frame", 5.0)),
                                     0, 20, 1, 1)
         form.addRow(self.jitter_on, self.jitter_px)
+        form.addRow(QLabel("  max px/frame  [max 20]"))
 
-        self.platform_on = QCheckBox("platform motion (25)")
+        self.platform_on = QCheckBox("platform motion")
         self.platform_on.setChecked(bool(noise.platform_motion.get("enabled", False)))
         self.platform_type = QComboBox()
         self.platform_type.addItems(["linear", "circular", "random", "spiral", "figure8"])
@@ -234,7 +240,7 @@ class ControlPanel(QWidget):
         form.addRow("mode", self.mode)
 
         self.duration = self._spin(self.config.run.duration_seconds, 1, 600, 1)
-        form.addRow("duration s (Mode A)", self.duration)
+        form.addRow("duration (seconds)", self.duration)
 
         self.seed = QSpinBox()
         self.seed.setRange(0, 10**6)
@@ -265,9 +271,14 @@ class ControlPanel(QWidget):
         form.addRow(self.colour_display_check)
 
         layout.addLayout(form)
-        layout.addWidget(QLabel(
-            "Mode B bypasses the virtual PTZ camera: the video is the scene, so pan/tilt is\\n"
-            "disabled and angular metrics are omitted rather than fabricated."))
+
+        # Fixed: was using \\n (literal backslash-n) instead of \n; also added word wrap.
+        _mode_note = QLabel(
+            "Mode B bypasses the virtual PTZ camera: the video is the scene, "
+            "so pan/tilt is disabled and angular metrics are omitted rather than fabricated.")
+        _mode_note.setWordWrap(True)
+        _mode_note.setStyleSheet("color: #8b949e; font-size: 9pt; padding: 4px;")
+        layout.addWidget(_mode_note)
         return widget
 
     def _pick_video(self) -> None:

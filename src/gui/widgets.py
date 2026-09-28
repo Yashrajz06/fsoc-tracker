@@ -66,6 +66,9 @@ class ViewportWidget(QWidget):
         self._error_px: Optional[float] = None
         self._state = ""
         self._extra_truths: list = []  # list of (x, y) for extra targets
+        # Motion trails — rolling history of the last ~2 s of each target's world position.
+        self._truth_trail: Deque[Tuple[float, float]] = deque(maxlen=60)
+        self._extra_trails: list = []  # one Deque per extra target, grown/shrunk dynamically
         self.setMinimumSize(560, 420)
 
     def _in_frame(self, point: Tuple[float, float]) -> bool:
@@ -107,10 +110,17 @@ class ViewportWidget(QWidget):
         self._estimate = outcome.estimate_xy
         truth = outcome.frame_data.ground_truth
         self._truth = (truth.x, truth.y) if truth is not None else None
-        self._extra_truths = [
-            (gt.x, gt.y)
-            for gt in (outcome.frame_data.extra_ground_truths or [])
-        ]
+        if self._truth is not None:
+            self._truth_trail.append(self._truth)
+        extra_gts = outcome.frame_data.extra_ground_truths or []
+        self._extra_truths = [(gt.x, gt.y) for gt in extra_gts]
+        # Keep one trail deque per extra target; grow or shrink to match the current count.
+        while len(self._extra_trails) < len(self._extra_truths):
+            self._extra_trails.append(deque(maxlen=60))
+        while len(self._extra_trails) > len(self._extra_truths):
+            self._extra_trails.pop()
+        for i, pos in enumerate(self._extra_truths):
+            self._extra_trails[i].append(pos)
         self._roi = outcome.roi
         self._origin = outcome.origin
         self._error_px = outcome.record.centroid_error_px
@@ -177,6 +187,26 @@ class ViewportWidget(QWidget):
         painter.drawRect(int(x + self._origin[0] * scale), int(top + self._origin[1] * scale),
                          max(2, int(self._pixmap.width() * scale)),
                          max(2, int(self._pixmap.height() * scale)))
+
+        # Beacon dots: convert frame-local coords back to world via origin.
+        _ox = self._origin[0]
+        _oy = self._origin[1]
+        if self._truth is not None:
+            _wx = self._truth[0] + _ox
+            _wy = self._truth[1] + _oy
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(self.TRUTH_COLOUR))
+            painter.drawEllipse(int(x + _wx * scale - 3), int(top + _wy * scale - 3), 7, 7)
+        _mm_extra_cols = [self.EXTRA_TARGET_COLOUR, "#79c0ff", "#ffa657"]
+        for _ei, _ep in enumerate(self._extra_truths):
+            _wx = _ep[0] + _ox
+            _wy = _ep[1] + _oy
+            _ec = _mm_extra_cols[_ei % len(_mm_extra_cols)]
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(_ec))
+            painter.drawEllipse(int(x + _wx * scale - 2), int(top + _wy * scale - 2), 5, 5)
+        painter.setBrush(Qt.NoBrush)
+
         font = painter.font()
         font.setPointSize(8)
         painter.setFont(font)
@@ -314,14 +344,39 @@ class ViewportWidget(QWidget):
             painter.drawText(int(lx if dx > 0 else lx - metrics.horizontalAdvance(text)),
                              int(ly) + (12 if dy > 0 else -4), text)
 
+        # Motion trails -- fading dots showing the last ~2 s of each target path.
+        n_trail = len(self._truth_trail)
+        if n_trail > 1:
+            painter.setPen(Qt.NoPen)
+            for _ti, _pos in enumerate(self._truth_trail):
+                if self._in_frame(_pos):
+                    _alpha = int(20 + 130 * _ti / (n_trail - 1))
+                    _col = QColor(self.TRUTH_COLOUR)
+                    _col.setAlpha(_alpha)
+                    painter.setBrush(_col)
+                    _px, _py = to_screen(_pos)
+                    painter.drawEllipse(int(_px - 2), int(_py - 2), 4, 4)
+        _xtc = [self.EXTRA_TARGET_COLOUR, "#79c0ff", "#ffa657"]
+        for _td, _tc in zip(self._extra_trails, _xtc):
+            _n = len(_td)
+            if _n > 1:
+                painter.setPen(Qt.NoPen)
+                for _ti, _pos in enumerate(_td):
+                    if self._in_frame(_pos):
+                        _a = int(20 + 130 * _ti / (_n - 1))
+                        _c = QColor(_tc)
+                        _c.setAlpha(_a)
+                        painter.setBrush(_c)
+                        _px, _py = to_screen(_pos)
+                        painter.drawEllipse(int(_px - 2), int(_py - 2), 4, 4)
+        painter.setBrush(Qt.NoBrush)
+
         if self._truth is not None and self._in_frame(self._truth):
             tx, ty = to_screen(self._truth)
             painter.setPen(QPen(QColor(self.TRUTH_COLOUR), 2))
             painter.setBrush(Qt.NoBrush)
             painter.drawEllipse(int(tx - 13), int(ty - 13), 26, 26)
             labelled(self._truth, self.TRUTH_COLOUR, "BEACON (true position)", -46, -30)
-
-        # Extra targets (multi-target mode) — drawn after the primary so primary is never occluded
         for idx, extra_pos in enumerate(self._extra_truths):
             if self._in_frame(extra_pos):
                 ex, ey = to_screen(extra_pos)
