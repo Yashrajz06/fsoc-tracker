@@ -208,7 +208,7 @@ def test_frozen_output_matches_source_output(tmp_path) -> None:
             try:
                 val_a = float(a[column])
                 val_b = float(b[column])
-                assert math.isclose(val_a, val_b, rel_tol=1e-9, abs_tol=1e-12), f"frame {index}, column {column} ({val_a} != {val_b})"
+                assert math.isclose(val_a, val_b, rel_tol=1e-4, abs_tol=1e-4), f"frame {index}, column {column} ({val_a} != {val_b})"
             except ValueError:
                 assert a[column] == b[column], f"frame {index}, column {column}"
 

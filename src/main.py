@@ -426,9 +426,8 @@ def _load_config_bundle_aware(path: str,
     Returns:
         Validated :class:`~src.config.AppConfig`.
     """
-    import json as _json
-    raw = _json.loads(open(path, encoding="utf-8").read())
     from src.config import merge_overrides, load_json_document, AppConfig as _AC
+    raw = load_json_document(path)
     applied = []
     for op in (overrides or []):
         raw = merge_overrides(raw, load_json_document(op))

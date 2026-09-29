@@ -267,7 +267,7 @@ and by a float32 path measuring 6–36× lower.
       it to the PID injects it rather than attenuating it.
 - [x] `src/control/statemachine.py` — SEARCH / TRACK / COAST with hysteresis.
       Tags each acquisition event as **in-FOV** or **search-limited** (DESIGN §7.5).
-- [x] `src/control/search.py` — Archimedean spiral acquisition scan.
+- [x] `src/control/search.py` — Cut Hexagonal spiral acquisition scan.
       Arm spacing is **FOV-derived** (`0.9 · min(fov_w, fov_h)`), never a stored constant.
 - [x] Tests: controller step response; max-trackable-velocity sweep → save plot
 

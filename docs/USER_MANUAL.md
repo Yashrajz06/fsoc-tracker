@@ -200,6 +200,8 @@ bottom right.
 
 ### 4.1 Control panel — four tabs
 
+Above the tabs is a **Global Search Bar**. Typing any keyword (e.g., "noise") will instantly filter the settings across all four tabs, jumping directly to the tab containing your match.
+
 **Target** — count (8), shape (9), size in pixels (10), initial location (11), motion model (12),
 and edge behaviour (bounce, wrap or clamp at the scene boundary).
 
@@ -223,9 +225,14 @@ so the GUI cannot accept something the command line would refuse.
 The live camera image, with the estimated centroid marked in orange and, when ground truth is
 available, the true position in green. The current state — SEARCH, TRACK or COAST — is overlaid.
 
-- **SEARCH** — no lock; the camera is sweeping a spiral pattern
+- **SEARCH** — no lock; the camera is sweeping a cut hexagonal spiral pattern
 - **TRACK** — locked; the ROI follows the Kalman prediction
 - **COAST** — lock held but detections are being missed; running on prediction
+
+**Interactive Camera Controls (Mid-Simulation):**
+- **Mouse Drag**: Click and drag inside the viewport to manually pan the camera.
+- **Arrow Keys**: Use the `Up`, `Down`, `Left`, and `Right` arrow keys to pan and tilt.
+- **Play/Pause Toggle**: Press the `Spacebar` to quickly start or stop the simulation.
 
 ### 4.3 Strip charts
 

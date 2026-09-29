@@ -376,7 +376,7 @@ that continues to report a wrong object.
 
 ### 8.1 The ≤2 s acquisition budget is unachievable when the beacon starts outside the viewport
 
-Covering a 2000×2000 uncertainty region with a spiral whose arm spacing equals the limiting FOV
+Covering a 2000×2000 uncertainty region with a cut hexagonal spiral whose arm spacing equals the limiting FOV
 dimension (480 px) requires a path of roughly `4×10⁶ / 480 ≈ 8.3×10³ px`. At the 5°/s slew ceiling
 (800 px/s) that is **≈10 s worst case**, and ≈5 s even at 10°/s. This is arithmetic, not tuning.
 
