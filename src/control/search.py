@@ -127,8 +127,14 @@ class SpiralSearch:
             radius = 0.0
 
         theta = math.sqrt(max(0.0, 2.0 * self._path_px / self._b)) if self._b > 0 else 0.0
-        return (self.center[0] + radius * math.cos(theta),
-                self.center[1] + radius * math.sin(theta))
+        
+        # Apply hexagonal scaling for "cut hexagonal spiral scan"
+        angle_in_segment = (theta % (math.pi / 3.0)) - (math.pi / 6.0)
+        hex_scale = (math.sqrt(3.0) / 2.0) / math.cos(angle_in_segment)
+        hex_radius = radius * hex_scale
+        
+        return (self.center[0] + hex_radius * math.cos(theta),
+                self.center[1] + hex_radius * math.sin(theta))
 
     def recenter(self, center_xy: Tuple[float, float]) -> None:
         """Restart the spiral about a new centre.

@@ -11,7 +11,7 @@ from typing import Deque, Optional, Tuple
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage, QPainter, QPen, QPixmap, QColor
 from PySide6.QtWidgets import QGridLayout, QGroupBox, QLabel, QVBoxLayout, QWidget
 
@@ -54,6 +54,8 @@ class ViewportWidget(QWidget):
     BORESIGHT_COLOUR = "#8b949e"
     EXTRA_TARGET_COLOUR = "#c792ea"  # purple, distinct from truth (green) and estimate (orange)
 
+    camera_panned = Signal(float, float)
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Create an empty viewport."""
         super().__init__(parent)
@@ -70,6 +72,7 @@ class ViewportWidget(QWidget):
         self._truth_trail: Deque[Tuple[float, float]] = deque(maxlen=60)
         self._extra_trails: list = []  # one Deque per extra target, grown/shrunk dynamically
         self.setMinimumSize(560, 420)
+        self._last_mouse_pos = None
 
     def _in_frame(self, point: Tuple[float, float]) -> bool:
         """Whether a frame-coordinate point actually lies inside the current frame.
@@ -264,6 +267,27 @@ class ViewportWidget(QWidget):
         caption = f"{int(factor)}x zoom on the beacon"
         painter.drawText(x + box - painter.fontMetrics().horizontalAdvance(caption),
                          top - 5, caption)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._last_mouse_pos = event.position()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._last_mouse_pos is not None and self._pixmap is not None:
+            pos = event.position()
+            dx = self._last_mouse_pos.x() - pos.x()
+            dy = self._last_mouse_pos.y() - pos.y()
+            
+            scaled = self._pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            sx = self._pixmap.width() / scaled.width() if scaled.width() > 0 else 1.0
+            sy = self._pixmap.height() / scaled.height() if scaled.height() > 0 else 1.0
+            
+            self.camera_panned.emit(dx * sx, dy * sy)
+            self._last_mouse_pos = pos
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._last_mouse_pos = None
 
     def paintEvent(self, event) -> None:  # noqa: D102, N802 - Qt override
         painter = QPainter(self)

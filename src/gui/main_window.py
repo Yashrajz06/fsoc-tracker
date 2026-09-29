@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QSplitter,
     QStatusBar, QVBoxLayout, QWidget,
@@ -55,6 +56,26 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.start_button.clicked.connect(self.start_run)
         self.stop_button.clicked.connect(self.stop_run)
+        
+        self.start_button.setToolTip("Start simulation (Space)")
+        self.stop_button.setToolTip("Stop simulation (Space)")
+        
+        self.viewport.camera_panned.connect(self._pan_camera)
+
+        self.play_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
+        self.play_shortcut.activated.connect(self._toggle_play)
+
+        self.up_shortcut = QShortcut(QKeySequence(Qt.Key_Up), self)
+        self.up_shortcut.activated.connect(lambda: self._pan_camera(0, -10))
+
+        self.down_shortcut = QShortcut(QKeySequence(Qt.Key_Down), self)
+        self.down_shortcut.activated.connect(lambda: self._pan_camera(0, 10))
+
+        self.left_shortcut = QShortcut(QKeySequence(Qt.Key_Left), self)
+        self.left_shortcut.activated.connect(lambda: self._pan_camera(-10, 0))
+
+        self.right_shortcut = QShortcut(QKeySequence(Qt.Key_Right), self)
+        self.right_shortcut.activated.connect(lambda: self._pan_camera(10, 0))
 
         buttons = QHBoxLayout()
         buttons.addWidget(self.start_button)
@@ -79,6 +100,10 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("ready")
+
+        style_path = Path(__file__).parent / "style.qss"
+        if style_path.exists():
+            self.setStyleSheet(style_path.read_text())
 
         # Metrics are refreshed on a timer rather than per frame: recomputing the summary on
         # every frame would put O(n) work on the GUI thread at frame rate.
@@ -133,6 +158,21 @@ class MainWindow(QMainWindow):
         if self.thread is not None:
             self.thread.stop()
             self.statusBar().showMessage("stopping...")
+
+    def _toggle_play(self) -> None:
+        if self.thread is not None and self.thread.isRunning():
+            self.stop_run()
+        else:
+            self.start_run()
+
+    def _pan_camera(self, dx: float, dy: float) -> None:
+        """Pan the camera mid-simulation."""
+        if self.thread is not None and self.thread.runner is not None:
+            runner = self.thread.runner
+            if hasattr(runner.source, "camera"):
+                camera = runner.source.camera
+                x, y = camera.boresight
+                camera.set_boresight(x + dx, y + dy)
 
     def _on_frame(self, outcome: FrameOutcome) -> None:
         """Route one frame to the display widgets.
