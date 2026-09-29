@@ -525,7 +525,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.selftest:
         return selftest()
-    if args.gui:
+        
+    should_launch_gui = args.gui
+    if not should_launch_gui and not args.headless and not args.check_config:
+        try:
+            import PySide6
+            should_launch_gui = True
+        except ImportError:
+            pass
+            
+    if should_launch_gui:
         return launch_gui(args)
     try:
         config = apply_overrides(
